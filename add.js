@@ -3,7 +3,8 @@ class QuickAdd {
     constructor() {
         this.db = new WantDB();
         // Use our Cloudflare Worker for metadata (server-side scrape)
-        this.META_ENDPOINT = 'https://want.fiorearcangelodesign.workers.dev'; // no trailing /meta here
+        // Temporarily disabled due to CORS issues - using fallback only
+        this.META_ENDPOINT = ''; // 'https://want.fiorearcangelodesign.workers.dev'
         this.init();
     }
 

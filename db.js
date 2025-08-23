@@ -19,6 +19,7 @@ class WantDB {
     }
 
     async addItem(item) {
+        console.log('Database addItem called with:', item);
         if (!this.db) await this.init();
         
         const newItem = {
@@ -27,15 +28,20 @@ class WantDB {
             title: item.title,
             price: item.price || '',
             image: item.image || '',
-            domain: this.extractDomain(item.url),
+            domain: item.domain || this.extractDomain(item.url),
             createdAt: Date.now()
         };
 
+        console.log('New item to add:', newItem);
+
         try {
             await this.db.add(this.storeName, newItem);
+            console.log('Item added to database successfully');
             return newItem;
         } catch (error) {
+            console.log('Database error:', error);
             if (error.name === 'ConstraintError') {
+                console.log('ConstraintError - updating existing item');
                 // URL already exists, update the item
                 const existingItem = await this.getItemByUrl(item.url);
                 const updatedItem = { 
@@ -46,6 +52,7 @@ class WantDB {
                     createdAt: Date.now() // Refresh timestamp
                 };
                 await this.db.put(this.storeName, updatedItem);
+                console.log('Item updated in database successfully');
                 return updatedItem;
             }
             throw error;

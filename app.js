@@ -3,7 +3,7 @@ class WantApp {
     constructor() {
         this.db = new WantDB();
         // Use our Cloudflare Worker for metadata (server-side scrape)
-        this.META_ENDPOINT = 'https://want.fiorearcangelodesign.workers.dev'; // no trailing /meta here
+        this.META_ENDPOINT = 'https://want.fiorearcangelodesign.workers.dev';
         this.init();
     }
 
@@ -38,21 +38,67 @@ class WantApp {
 
         // Close modal on backdrop click
         document.getElementById('addModal').addEventListener('click', (e) => {
-            if (e.target.id === 'addModal') {
+            if (e.target.id === 'addModal' || e.target.id === 'modalBackdrop') {
                 this.hideModal();
             }
         });
 
-        // Form submission
-        document.getElementById('addForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleAddItem();
+        // Swipe to close on mobile
+        this.setupSwipeToClose();
+
+        // Form submission with proper URL handling
+        const form = document.getElementById('addForm');
+        const addBtn = document.getElementById('addBtn');
+
+        form?.addEventListener('submit', async (e) => {
+            console.log('Form submit event triggered');
+            e.preventDefault(); // stop navigation
+            addBtn.disabled = true;
+
+            try {
+                const raw = urlInput?.value?.trim() || "";
+                const url = this.normalizeUrl(raw);
+                if (!this.isProbablyUrl(url)) {
+                    alert("Please paste a valid link");
+                    return;
+                }
+
+                const meta = await this.enrichFromMeta(url);
+                const host = (new URL(url)).hostname.replace(/^www\./i, "");
+                const item = {
+                    id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
+                    url,
+                    title: meta?.title || host,
+                    image: meta?.image || `https://www.google.com/s2/favicons?domain=${host}&sz=128`,
+                    price: meta?.price || "",
+                    domain: this.normalizedDomainFrom(url),
+                    createdAt: Date.now(),
+                };
+
+                await this.upsertItem(item);
+                await this.loadItems();
+                this.hideModal();
+                this.showToast('Item added to Want');
+            } catch (err) {
+                console.error("Add item failed", err);
+                this.showToast('Error adding item', 'error');
+            } finally {
+                addBtn.disabled = false;
+            }
         });
 
         // URL field auto-extraction
         const urlInput = document.getElementById('urlInput');
         urlInput.addEventListener('input', () => this.handleUrlInput(urlInput.value.trim()));
-        urlInput.addEventListener('paste', () => setTimeout(() => this.handleUrlInput(urlInput.value.trim()), 0));
+        urlInput.addEventListener('paste', (e) => {
+            // Let the paste happen first, then process
+            setTimeout(() => {
+                const value = urlInput.value.trim();
+                if (value) {
+                    this.handleUrlInput(value);
+                }
+            }, 10);
+        });
         urlInput.addEventListener('blur', () => this.handleUrlInput(urlInput.value.trim()));
 
         // Toggle advanced fields
@@ -98,6 +144,16 @@ class WantApp {
 
             const text = (e.clipboardData || window.clipboardData)?.getData("text")?.trim();
             if (!text) return;
+            
+            // Check if it's a URL
+            if (!this.isProbablyUrl(text)) return;
+            
+            // If modal is open, don't use global paste - let the modal handle it
+            const modal = document.getElementById('addModal');
+            if (modal && modal.style.display === 'flex') {
+                return;
+            }
+            
             const added = await this.saveUrlToWant(text);
             if (added) e.preventDefault(); // avoid pasting the URL into some random focusable
         });
@@ -124,12 +180,33 @@ class WantApp {
     }
 
     showModal() {
-        document.getElementById('addModal').style.display = 'flex';
-        document.getElementById('url').focus();
+        const modal = document.getElementById('addModal');
+        modal.style.display = 'flex';
+        
+        // Trigger animation after display is set
+        setTimeout(() => {
+            modal.classList.add('show');
+        }, 10);
+        
+        const urlInput = document.getElementById('urlInput');
+        if (urlInput) {
+            urlInput.focus();
+        }
+        
+        // Prevent body scroll
+        document.body.style.overflow = 'hidden';
     }
 
     hideModal() {
-        document.getElementById('addModal').style.display = 'none';
+        const modal = document.getElementById('addModal');
+        modal.classList.remove('show');
+        
+        // Wait for animation to complete
+        setTimeout(() => {
+            modal.style.display = 'none';
+            document.body.style.overflow = '';
+        }, 300);
+        
         document.getElementById('addForm').reset();
         this.hidePreview();
         document.getElementById('advanced').classList.add('hidden');
@@ -145,39 +222,7 @@ class WantApp {
         document.getElementById('settingsModal').style.display = 'none';
     }
 
-    async handleAddItem() {
-        const urlInput = document.getElementById('urlInput');
-        const titleInput = document.getElementById('titleInput');
-        const priceInput = document.getElementById('priceInput');
-        const imageInput = document.getElementById('imageInput');
-        
-        const url = urlInput.value.trim();
-        const title = titleInput.value.trim();
-        const price = priceInput.value.trim();
-        const image = imageInput.value.trim();
 
-        // Use advanced field values if available, otherwise use preview data
-        const finalTitle = title || document.getElementById('previewTitle').textContent;
-        const finalPrice = price || document.getElementById('previewPrice').textContent;
-        const finalImage = image || document.getElementById('previewImg').src;
-
-        const item = {
-            url: url,
-            title: finalTitle,
-            price: finalPrice === 'N/A' ? '' : finalPrice,
-            image: finalImage
-        };
-
-        try {
-            await this.db.addItem(item);
-            this.hideModal();
-            await this.loadItems();
-            this.showToast('Item added to Want');
-        } catch (error) {
-            console.error('Error adding item:', error);
-            this.showToast('Error adding item', 'error');
-        }
-    }
 
     async loadItems() {
         try {
@@ -213,20 +258,121 @@ class WantApp {
         });
     }
 
+    // URL validation and normalization helpers
+    isProbablyUrl(str) {
+        if (!str) return false;
+        try { 
+            const u = new URL(str); 
+            return /^https?:$/.test(u.protocol); 
+        } catch { 
+            return /^[\w.-]+\.[a-z]{2,}([\/?#].*)?$/i.test(str); 
+        }
+    }
+
+    normalizeUrl(str) {
+        const s = String(str).trim();
+        if (!s) return "";
+        if (/^https?:\/\//i.test(s)) return s;
+        if (/^[\w.-]+\.[a-z]{2,}([\/?#].*)?$/i.test(s)) return `https://${s}`;
+        return s;
+    }
+
+    // Returns eTLD+1 in most cases (simple heuristic, handles common multi-part TLDs)
+    getMainDomain(urlStr) {
+        try {
+            const host = new URL(urlStr).hostname.replace(/^www\./i, "");
+            const parts = host.split(".");
+            const multiTLD = new Set([
+                "co.uk","com.au","com.br","co.jp","com.cn","com.hk","com.sg",
+                "com.tr","com.mx","com.ar","co.kr","com.tw","com.my","co.in"
+            ]);
+            if (parts.length <= 2) return host;
+            const last2 = parts.slice(-2).join(".");
+            const last3 = parts.slice(-3).join(".");
+            return multiTLD.has(last2) && parts.length >= 3 ? last3 : last2;
+        } catch {
+            return "";
+        }
+    }
+
+    // When saving items, ensure we store a normalized domain
+    normalizedDomainFrom(urlStr) {
+        const d = this.getMainDomain(urlStr);
+        return d || (function(){ try { return new URL(urlStr).hostname.replace(/^www\./i,""); } catch { return ""; }})();
+    }
+
+    // Escape HTML to prevent XSS
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Swipe to close functionality for mobile
+    setupSwipeToClose() {
+        const modal = document.getElementById('addModal');
+        let startY = 0;
+        let currentY = 0;
+        let isDragging = false;
+
+        const handleTouchStart = (e) => {
+            startY = e.touches[0].clientY;
+            isDragging = true;
+        };
+
+        const handleTouchMove = (e) => {
+            if (!isDragging) return;
+            
+            currentY = e.touches[0].clientY;
+            const deltaY = currentY - startY;
+            
+            if (deltaY > 0) {
+                const modalContent = modal.querySelector('.modal-content');
+                modalContent.style.transform = `translateY(${deltaY}px)`;
+            }
+        };
+
+        const handleTouchEnd = (e) => {
+            if (!isDragging) return;
+            
+            const deltaY = currentY - startY;
+            const modalContent = modal.querySelector('.modal-content');
+            
+            if (deltaY > 100) {
+                // Swipe down threshold reached, close modal
+                this.hideModal();
+            } else {
+                // Reset position
+                modalContent.style.transform = '';
+            }
+            
+            isDragging = false;
+        };
+
+        // Add touch listeners to modal content
+        const modalContent = modal.querySelector('.modal-content');
+        modalContent.addEventListener('touchstart', handleTouchStart, { passive: true });
+        modalContent.addEventListener('touchmove', handleTouchMove, { passive: true });
+        modalContent.addEventListener('touchend', handleTouchEnd, { passive: true });
+    }
+
     createItemCard(item) {
         const imageUrl = item.image || this.getDefaultImage(item.domain);
+        const domain = item.domain || this.normalizedDomainFrom(item.url);
+        const title = item.title || domain;
         
         return `
-            <div class="card" onclick="window.open('${item.url}', '_blank')">
-                <img src="${imageUrl}" alt="${item.title}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjFGNUY5Ii8+CjxwYXRoIGQ9Ik0xMDAgNzBDODguOTU0MyA3MCA4MCA3OC45NTQzIDgwIDkwQzgwIDEwMS4wNDYgODguOTU0MyAxMTAgMTAwIDExMEMxMTEuMDQ2IDExMCAxMjAgMTAxLjA0NiAxMjAgOTBDMTIwIDc4Ljk1NDMgMTExLjA0NiA3MCAxMDAgNzBaIiBmaWxsPSIjQ0JELTQ2NiIvPgo8cGF0aCBkPSJNMTYwIDE2MEg0MEM0MCAxNjAgNDAgMTYwIDQwIDE2MFYxMjBDNDAgMTIwIDQwIDEyMCA0MCAxMjBIMTYwQzE2MCAxMjAgMTYwIDEyMCAxNjAgMTIwVjE2MFoiIGZpbGw9IiNDQkQtNDY2Ii8+Cjwvc3ZnPgo='">
-                <div class="card-footer">
-                    <div>
-                        <div class="card-price">${item.price || 'N/A'}</div>
-                        <div class="card-domain">${item.domain}</div>
-                    </div>
+            <a class="card" href="${this.escapeHtml(item.url)}" target="_blank" rel="noopener">
+                <div class="img-wrap">
+                    <img src="${this.escapeHtml(imageUrl)}" alt="${this.escapeHtml(title)}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjFGNUY5Ii8+CjxwYXRoIGQ9Ik0xMDAgNzBDODguOTU0MyA3MCA4MCA3OC45NTQzIDgwIDkwQzgwIDEwMS4wNDYgODguOTU0MyAxMTAgMTAwIDExMEMxMTEuMDQ2IDExMCAxMjAgMTAxLjA0NiAxMjAgOTBDMTIwIDc4Ljk1NDMgMTExLjA0NiA3MCAxMDAgNzBaIiBmaWxsPSIjQ0JELTQ2NiIvPgo8cGF0aCBkPSJNMTYwIDE2MEg0MEM0MCAxNjAgNDAgMTYwIDQwIDE2MFYxMjBDNDAgMTIwIDQwIDEyMCA0MCAxMjBIMTYwQzE2MCAxMjAgMTYwIDEyMCAxNjAgMTIwVjE2MFoiIGZpbGw9IiNDQkQtNDY2Ii8+Cjwvc3ZnPgo='">
+                </div>
+                <div class="card-meta">
+                    <h3 class="card-title">${this.escapeHtml(title)}</h3>
+                    <div class="card-price">${this.escapeHtml(item.price || "")}</div>
+                    <div class="card-domain">${this.escapeHtml(domain)}</div>
                 </div>
                 <button class="delete-btn" id="delete-${item.id}" title="Delete item">×</button>
-            </div>
+            </a>
         `;
     }
 
@@ -299,6 +445,8 @@ class WantApp {
     }
 
     async handleUrlInput(url) {
+        console.log('handleUrlInput called with:', url);
+        
         if (!url) {
             this.hidePreview();
             this.updateAddButton(false);
@@ -307,10 +455,13 @@ class WantApp {
 
         // Check if URL is valid
         if (!this.isProbablyUrl(url)) {
+            console.log('URL not valid:', url);
             this.hidePreview();
             this.updateAddButton(false);
             return;
         }
+
+        console.log('Processing URL:', url);
 
         // Enable add button for valid URL
         this.updateAddButton(true);
@@ -321,23 +472,43 @@ class WantApp {
         try {
             const meta = await this.enrichFromMeta(url);
             const host = this.hostnameOf(url);
-            const fallbackImg = `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
+            
+            if (meta) {
+                // Worker succeeded
+                const title = meta.title || host;
+                const image = meta.image || `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
+                const price = meta.price || '';
 
-            const title = meta?.title || host;
-            const image = meta?.image || fallbackImg;
-            const price = meta?.price || '';
+                console.log('Preview data (from worker):', { title, image, price, domain: host });
 
-            // Update preview
-            this.updatePreview({ title, image, price, domain: host });
-            this.showPreview();
+                // Update preview
+                this.updatePreview({ title, image, price, domain: host });
+                this.showPreview();
 
-            // Update advanced fields if they're visible
-            if (!document.getElementById('advanced').classList.contains('hidden')) {
-                this.setAdvancedFormValues({ title, image, price });
+                // Update advanced fields if they're visible
+                if (!document.getElementById('advanced').classList.contains('hidden')) {
+                    this.setAdvancedFormValues({ title, image, price });
+                }
+            } else {
+                // Worker failed, use fallback
+                const fallbackMeta = this.extractBasicMetadata(url);
+                console.log('Preview data (fallback):', { ...fallbackMeta, domain: host });
+
+                // Update preview
+                this.updatePreview({ ...fallbackMeta, domain: host });
+                this.showPreview();
+
+                // Update advanced fields if they're visible
+                if (!document.getElementById('advanced').classList.contains('hidden')) {
+                    this.setAdvancedFormValues(fallbackMeta);
+                }
             }
         } catch (error) {
             console.error('Error handling URL input:', error);
-            this.hidePreview();
+            // Show fallback preview instead of hiding
+            const fallbackMeta = this.extractBasicMetadata(url);
+            this.updatePreview({ ...fallbackMeta, domain: this.hostnameOf(url) });
+            this.showPreview();
         }
     }
 
@@ -348,11 +519,12 @@ class WantApp {
 
         // Enrich via Worker
         const meta = await this.enrichFromMeta(url);
+        const fallbackMeta = this.extractBasicMetadata(url);
 
         const host = this.hostnameOf(url);
-        const image = meta?.image || `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
-        const title = meta?.title || host;
-        const price = meta?.price || "";
+        const image = meta?.image || fallbackMeta.image;
+        const title = meta?.title || fallbackMeta.title;
+        const price = meta?.price || fallbackMeta.price;
 
         const item = {
             id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
@@ -360,7 +532,7 @@ class WantApp {
             title,
             price,
             image,
-            domain: host,
+            domain: this.normalizedDomainFrom(url),
             createdAt: Date.now()
         };
 
@@ -395,9 +567,18 @@ class WantApp {
         try {
             const r = await fetch(`${this.META_ENDPOINT}/meta?url=${encodeURIComponent(url)}`, {
                 method: 'GET',
+                mode: 'cors',
+                headers: {
+                    'Accept': 'application/json',
+                }
             });
-            if (!r.ok) throw new Error('meta failed');
+            if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
             const d = await r.json();
+            
+            if (d.error) {
+                console.log('Worker returned error:', d.error);
+                return null;
+            }
             
             // Process image URL - use original URL if weserv.nl fails
             let image = '';
@@ -411,9 +592,39 @@ class WantApp {
                 image,
                 price: d.price || '',
             };
-        } catch {
+        } catch (error) {
+            console.log('enrichFromMeta failed:', error.message);
+            // Return null to trigger fallback
             return null;
         }
+    }
+
+    // Fallback metadata extraction when worker fails
+    extractBasicMetadata(url) {
+        const host = this.hostnameOf(url);
+        const fallbackImg = `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
+        
+        // Try to extract title from URL path
+        let title = host;
+        try {
+            const urlObj = new URL(url);
+            const pathParts = urlObj.pathname.split('/').filter(part => part.length > 0);
+            if (pathParts.length > 0) {
+                // Use last meaningful path segment as title
+                const lastPart = pathParts[pathParts.length - 1];
+                if (lastPart && lastPart !== 'index.html' && lastPart !== 'index') {
+                    title = lastPart.replace(/[-_]/g, ' ').replace(/\.[^/.]+$/, '');
+                }
+            }
+        } catch (e) {
+            // Keep hostname as title
+        }
+        
+        return {
+            title: title,
+            image: fallbackImg,
+            price: '',
+        };
     }
 
     showPreviewLoading() {
@@ -491,41 +702,9 @@ class WantApp {
 
     updateAddButton(enabled) {
         const addBtn = document.getElementById('addBtn');
+        console.log('updateAddButton called with enabled:', enabled);
         addBtn.disabled = !enabled;
-    }
-
-    async handleAddItem() {
-        const urlInput = document.getElementById('urlInput');
-        const titleInput = document.getElementById('titleInput');
-        const priceInput = document.getElementById('priceInput');
-        const imageInput = document.getElementById('imageInput');
-        
-        const url = urlInput.value.trim();
-        const title = titleInput.value.trim();
-        const price = priceInput.value.trim();
-        const image = imageInput.value.trim();
-
-        // Use advanced field values if available, otherwise use preview data
-        const finalTitle = title || document.getElementById('previewTitle').textContent;
-        const finalPrice = price || document.getElementById('previewPrice').textContent;
-        const finalImage = image || document.getElementById('previewImg').src;
-
-        const item = {
-            url: url,
-            title: finalTitle,
-            price: finalPrice === 'N/A' ? '' : finalPrice,
-            image: finalImage
-        };
-
-        try {
-            await this.db.addItem(item);
-            this.hideModal();
-            await this.loadItems();
-            this.showToast('Item added to Want');
-        } catch (error) {
-            console.error('Error adding item:', error);
-            this.showToast('Error adding item', 'error');
-        }
+        console.log('Button disabled state:', addBtn.disabled);
     }
 
     async exportData() {

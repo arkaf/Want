@@ -2,6 +2,19 @@
 // Deploy this to Cloudflare Workers and update META_ENDPOINT in app.js
 export default {
   async fetch(req) {
+    // Handle CORS preflight requests
+    if (req.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 200,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Accept',
+          'Access-Control-Max-Age': '86400',
+        }
+      });
+    }
+
     const u = new URL(req.url);
     if (u.pathname !== "/meta") return new Response("ok");
     const target = u.searchParams.get("url");
