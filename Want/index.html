@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Want</title>
+    <meta name="description" content="Your personal wishlist - simple and offline">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="styles.css">
+    <meta name="theme-color" content="#6366f1">
+    <link rel="apple-touch-icon" href="assets/icon-192.png">
+</head>
+<body>
+    <header>
+        <h1>Want</h1>
+        <div class="header-actions">
+            <button id="settingsBtn" class="settings-btn" title="Settings">⚙️</button>
+            <button id="addBtn" class="add-btn">+ Add</button>
+        </div>
+    </header>
+
+    <main>
+        <div id="itemsGrid" class="items-grid">
+            <!-- Items will be populated here -->
+        </div>
+        
+        <div id="emptyState" class="empty-state" style="display: none;">
+            <p>Your want list is empty</p>
+            <p>Add your first item to get started</p>
+        </div>
+    </main>
+
+    <!-- Add Modal -->
+    <div id="addModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add to Want</h2>
+                <button id="closeModal" class="close-btn">&times;</button>
+            </div>
+            <form id="addForm">
+                <div class="form-group">
+                    <label for="url">URL *</label>
+                    <input type="url" id="url" name="url" required placeholder="https://example.com">
+                </div>
+                <div class="form-group">
+                    <label for="title">Title *</label>
+                    <input type="text" id="title" name="title" required placeholder="Item title">
+                </div>
+                <div class="form-group">
+                    <label for="price">Price</label>
+                    <input type="text" id="price" name="price" placeholder="$99.99">
+                </div>
+                <div class="form-group">
+                    <label for="image">Image URL (optional)</label>
+                    <input type="url" id="image" name="image" placeholder="https://example.com/image.jpg">
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="cancelBtn" class="btn-secondary">Cancel</button>
+                    <button type="submit" class="btn-primary">Add Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button id="closeSettingsModal" class="close-btn">&times;</button>
+            </div>
+            <div class="settings-content">
+                <div class="settings-section">
+                    <h3>Data Management</h3>
+                    <div class="settings-actions">
+                        <button id="exportBtn" class="btn-secondary">Export Data</button>
+                        <button id="importBtn" class="btn-secondary">Import Data</button>
+                    </div>
+                    <input type="file" id="importFile" accept=".json" style="display: none;">
+                </div>
+                <div class="settings-section">
+                    <h3>About</h3>
+                    <p>Want - Your personal wishlist</p>
+                    <p>Version 1.0.0</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast" style="display: none;"></div>
+
+    <script src="vendor/idb.min.js"></script>
+    <script src="db.js"></script>
+    <script src="app.js"></script>
+    
+    <script>
+        // Register service worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js')
+                .then(registration => console.log('SW registered'))
+                .catch(error => console.log('SW registration failed'));
+        }
+    </script>
+</body>
+</html>

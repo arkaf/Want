@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add to Want</title>
+    <meta name="description" content="Quick add item to your Want list">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="styles.css">
+    <meta name="theme-color" content="#6366f1">
+    <link rel="apple-touch-icon" href="assets/icon-192.png">
+</head>
+<body>
+    <div class="quick-add-container">
+        <div class="quick-add-content">
+            <h1>Adding to Want...</h1>
+            <div id="loadingSpinner" class="loading-spinner">
+                <div class="spinner"></div>
+                <p>Processing your item...</p>
+            </div>
+            <div id="errorMessage" class="error-message" style="display: none;">
+                <p>Error processing item. Please try again.</p>
+                <button onclick="window.location.href='index.html'" class="btn-primary">Go to Want</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="vendor/idb.min.js"></script>
+    <script src="db.js"></script>
+    <script src="add.js"></script>
+</body>
+</html>
