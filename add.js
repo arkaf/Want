@@ -3,8 +3,7 @@ class QuickAdd {
     constructor() {
         this.db = new WantDB();
         // Use our Cloudflare Worker for metadata (server-side scrape)
-        // Temporarily disabled due to CORS issues - using fallback only
-        this.META_ENDPOINT = ''; // 'https://want.fiorearcangelodesign.workers.dev'
+        this.META_ENDPOINT = 'https://want.fiorearcangelodesign.workers.dev';
         this.init();
     }
 
@@ -63,18 +62,32 @@ class QuickAdd {
         try {
             const r = await fetch(`${this.META_ENDPOINT}/meta?url=${encodeURIComponent(url)}`, {
                 method: 'GET',
+                mode: 'cors',
+                headers: {
+                    'Accept': 'application/json',
+                }
             });
-            if (!r.ok) throw new Error('meta failed');
+            if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
             const d = await r.json();
-            const image = d.image
-                ? `https://images.weserv.nl/?url=${encodeURIComponent(d.image)}&w=800&h=800&fit=cover`
-                : '';
+            
+            if (d.error) {
+                console.log('Worker returned error:', d.error);
+                return null;
+            }
+            
+            // Store original URL for fallback, use weserv.nl for display
+            let image = '';
+            if (d.image) {
+                image = d.image;
+            }
+            
             return {
                 title: d.title || '',
                 image,
                 price: d.price || '',
             };
-        } catch {
+        } catch (error) {
+            console.log('enrichFromMeta failed:', error.message);
             return null;
         }
     }

@@ -21,7 +21,7 @@
         <h1>Want</h1>
         <div class="header-actions">
             <button id="settingsBtn" class="settings-btn" title="Settings">⚙️</button>
-            <button id="addBtn" class="add-btn">+ Add</button>
+            <button id="openAddBtn" class="add-btn">+ Add</button>
         </div>
     </header>
 
@@ -52,14 +52,14 @@
                 </div>
 
                 <div id="metaPreview" class="hidden preview">
-                    <div class="card">
-                        <img id="previewImg" alt="" />
-                        <div class="card-footer">
-                            <span id="previewPrice"></span>
-                            <span id="previewDomain"></span>
-                        </div>
+                    <div class="preview-img-wrap">
+                        <img id="previewImg" alt="Preview" />
                     </div>
                     <div class="preview-title" id="previewTitle"></div>
+                    <div class="preview-meta">
+                        <span id="previewPrice"></span>
+                        <span id="previewDomain"></span>
+                    </div>
                     <button type="button" id="toggleAdvanced" class="linklike">Edit details</button>
                 </div>
 
@@ -80,8 +80,7 @@
                 </div>
 
                 <div class="form-actions">
-                    <button type="button" id="cancelBtn" class="btn-secondary">Cancel</button>
-                    <button type="submit" id="addBtn" class="btn-primary" disabled>Add Item</button>
+                    <button type="submit" id="addItemBtn" class="btn-primary" disabled>Add Item</button>
                 </div>
             </form>
         </div>

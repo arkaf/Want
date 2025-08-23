@@ -346,7 +346,6 @@ main {
 
 .form-actions {
     display: flex;
-    gap: 0.75rem;
     margin-top: 1.5rem;
 }
 
@@ -358,7 +357,7 @@ main {
     font-weight: 500;
     cursor: pointer;
     transition: background-color 0.2s;
-    flex: 1;
+    width: 100%;
 }
 
 .btn-primary {
@@ -538,11 +537,25 @@ main {
     text-align: center;
 }
 
-.preview .card {
-    width: 120px;
-    height: 120px;
-    margin: 0 auto 1rem;
-    display: inline-block;
+/* Preview container always square (1:1 ratio) */
+.preview-img-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border-radius: 12px;
+    background: #f7f7f7;
+    margin-bottom: 1rem;
+}
+
+/* Image fills container */
+.preview-img-wrap img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 }
 
 .preview-title {
@@ -551,6 +564,15 @@ main {
     margin-bottom: 0.75rem;
     color: #000000;
     line-height: 1.4;
+}
+
+.preview-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+    color: #666666;
 }
 
 .linklike {

@@ -9,6 +9,13 @@ class WantApp {
 
     async init() {
         await this.db.init();
+        
+        // Guard duplicate IDs forever
+        ['openAddBtn','addItemBtn','urlInput','addForm'].forEach(id => {
+            const els = document.querySelectorAll('#'+id);
+            if (els.length > 1) console.warn('Duplicate id:', id, els);
+        });
+        
         this.bindEvents();
         await this.loadItems();
         
@@ -22,8 +29,8 @@ class WantApp {
     }
 
     bindEvents() {
-        // Add button
-        document.getElementById('addBtn').addEventListener('click', () => {
+        // Open modal (header button)
+        document.getElementById('openAddBtn').addEventListener('click', () => {
             this.showModal();
         });
 
@@ -32,9 +39,7 @@ class WantApp {
             this.hideModal();
         });
 
-        document.getElementById('cancelBtn').addEventListener('click', () => {
-            this.hideModal();
-        });
+
 
         // Close modal on backdrop click
         document.getElementById('addModal').addEventListener('click', (e) => {
@@ -46,42 +51,25 @@ class WantApp {
         // Swipe to close on mobile
         this.setupSwipeToClose();
 
-        // Form submission with proper URL handling
+        // Form submission
         const form = document.getElementById('addForm');
-        const addBtn = document.getElementById('addBtn');
+        const addBtn = document.getElementById('addItemBtn');
 
         form?.addEventListener('submit', async (e) => {
-            console.log('Form submit event triggered');
-            e.preventDefault(); // stop navigation
+            e.preventDefault();
+            const raw = urlInput.value.trim();
+            const url = this.normalizeUrl(raw);
+            if (!this.isProbablyUrl(url)) { 
+                alert('Paste a valid URL'); 
+                return; 
+            }
+
             addBtn.disabled = true;
-
             try {
-                const raw = urlInput?.value?.trim() || "";
-                const url = this.normalizeUrl(raw);
-                if (!this.isProbablyUrl(url)) {
-                    alert("Please paste a valid link");
-                    return;
-                }
-
-                const meta = await this.enrichFromMeta(url);
-                const host = (new URL(url)).hostname.replace(/^www\./i, "");
-                const item = {
-                    id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
-                    url,
-                    title: meta?.title || host,
-                    image: meta?.image || `https://www.google.com/s2/favicons?domain=${host}&sz=128`,
-                    price: meta?.price || "",
-                    domain: this.normalizedDomainFrom(url),
-                    createdAt: Date.now(),
-                };
-
-                await this.upsertItem(item);
-                await this.loadItems();
-                this.hideModal();
-                this.showToast('Item added to Want');
+                await this.addUrlToWant(url);              // <-- same pipeline as paste
             } catch (err) {
-                console.error("Add item failed", err);
-                this.showToast('Error adding item', 'error');
+                console.error('Add failed', err);
+                this.showToast?.('Could not add item');
             } finally {
                 addBtn.disabled = false;
             }
@@ -89,17 +77,19 @@ class WantApp {
 
         // URL field auto-extraction
         const urlInput = document.getElementById('urlInput');
-        urlInput.addEventListener('input', () => this.handleUrlInput(urlInput.value.trim()));
+        urlInput.addEventListener('input', () => {
+            this.updateAddButton(!!urlInput.value.trim());
+        });
         urlInput.addEventListener('paste', (e) => {
             // Let the paste happen first, then process
             setTimeout(() => {
                 const value = urlInput.value.trim();
-                if (value) {
-                    this.handleUrlInput(value);
-                }
+                this.updateAddButton(!!value);
             }, 10);
         });
-        urlInput.addEventListener('blur', () => this.handleUrlInput(urlInput.value.trim()));
+        urlInput.addEventListener('blur', () => {
+            this.updateAddButton(!!urlInput.value.trim());
+        });
 
         // Toggle advanced fields
         document.getElementById('toggleAdvanced').addEventListener('click', () => {
@@ -137,25 +127,17 @@ class WantApp {
 
         // 3) Global paste listener (preferred, works with browser paste)
         document.addEventListener("paste", async (e) => {
-            // ignore if user is typing in an input/textarea/contenteditable
             const a = document.activeElement;
-            const isEditable = a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable);
-            if (isEditable) return;
+            const editing = a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable);
+            if (editing) return;
 
             const text = (e.clipboardData || window.clipboardData)?.getData("text")?.trim();
             if (!text) return;
-            
-            // Check if it's a URL
-            if (!this.isProbablyUrl(text)) return;
-            
-            // If modal is open, don't use global paste - let the modal handle it
-            const modal = document.getElementById('addModal');
-            if (modal && modal.style.display === 'flex') {
-                return;
-            }
-            
-            const added = await this.saveUrlToWant(text);
-            if (added) e.preventDefault(); // avoid pasting the URL into some random focusable
+            const url = this.normalizeUrl(text);
+            if (!this.isProbablyUrl(url)) return;
+
+            e.preventDefault();
+            await this.addUrlToWant(url);
         });
 
         // 4) Bonus: Cmd/Ctrl+V fallback using Clipboard API (for cases where 'paste' doesn't fire)
@@ -164,15 +146,18 @@ class WantApp {
             if (!isPaste) return;
 
             const a = document.activeElement;
-            const isEditable = a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable);
-            if (isEditable) return;
+            const editing = a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable);
+            if (editing) return;
 
             if (navigator.clipboard?.readText) {
                 try {
                     const text = (await navigator.clipboard.readText())?.trim();
                     if (text) {
-                        const added = await this.saveUrlToWant(text);
-                        if (added) e.preventDefault();
+                        const url = this.normalizeUrl(text);
+                        if (this.isProbablyUrl(url)) {
+                            await this.addUrlToWant(url);
+                            e.preventDefault();
+                        }
                     }
                 } catch { /* ignore */ }
             }
@@ -221,6 +206,8 @@ class WantApp {
     hideSettingsModal() {
         document.getElementById('settingsModal').style.display = 'none';
     }
+
+
 
 
 
@@ -275,6 +262,45 @@ class WantApp {
         if (/^https?:\/\//i.test(s)) return s;
         if (/^[\w.-]+\.[a-z]{2,}([\/?#].*)?$/i.test(s)) return `https://${s}`;
         return s;
+    }
+
+    hostnameOf(u) {
+        try { 
+            return new URL(u).hostname.replace(/^www\./i,''); 
+        } catch { 
+            return ''; 
+        }
+    }
+
+    async buildItemFromUrl(url) {
+        const host = this.hostnameOf(url);
+        const meta = await this.enrichFromMeta(url); // must return {title,image,price} or null
+
+        // image: prefer proxied, fallback favicon, runtime onerror → original
+        const original = meta?.image || '';
+        const proxied = original ? `https://images.weserv.nl/?url=${encodeURIComponent(original)}&w=800&h=800&fit=cover` : '';
+        const fallback = `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
+
+        return {
+            id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
+            url,
+            title: meta?.title || host,
+            price: meta?.price || '',
+            image: proxied || fallback,
+            originalImage: original, // keep for onerror fallback in render
+            domain: this.normalizedDomainFrom(url),
+            createdAt: Date.now(),
+        };
+    }
+
+    // single add function used by ALL entry points
+    async addUrlToWant(url) {
+        const item = await this.buildItemFromUrl(url);
+        const id = await this.upsertItem(item);      // upsert by URL
+        await this.loadItems();                      // refresh UI
+        this.hideModal?.();                          // if modal was open
+        this.showToast?.('Saved to Want');           // optional
+        return id;
     }
 
     // Returns eTLD+1 in most cases (simple heuristic, handles common multi-part TLDs)
@@ -356,15 +382,20 @@ class WantApp {
         modalContent.addEventListener('touchend', handleTouchEnd, { passive: true });
     }
 
-    createItemCard(item) {
-        const imageUrl = item.image || this.getDefaultImage(item.domain);
-        const domain = item.domain || this.normalizedDomainFrom(item.url);
+        createItemCard(item) {
+        const domain = item.domain || this.hostnameOf(item.url);
         const title = item.title || domain;
-        
+        const imageUrl = item.image || this.getDefaultImage(domain);
+
         return `
             <a class="card" href="${this.escapeHtml(item.url)}" target="_blank" rel="noopener">
                 <div class="img-wrap">
-                    <img src="${this.escapeHtml(imageUrl)}" alt="${this.escapeHtml(title)}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjFGNUY5Ii8+CjxwYXRoIGQ9Ik0xMDAgNzBDODguOTU0MyA3MCA4MCA3OC45NTQzIDgwIDkwQzgwIDEwMS4wNDYgODguOTU0MyAxMTAgMTAwIDExMEMxMTEuMDQ2IDExMCAxMjAgMTAxLjA0NiAxMjAgOTBDMTIwIDc4Ljk1NDMgMTExLjA0NiA3MCAxMDAgNzBaIiBmaWxsPSIjQ0JELTQ2NiIvPgo8cGF0aCBkPSJNMTYwIDE2MEg0MEM0MCAxNjAgNDAgMTYwIDQwIDE2MFYxMjBDNDAgMTIwIDQwIDEyMCA0MCAxMjBIMTYwQzE2MCAxMjAgMTYwIDEyMCAxNjAgMTIwVjE2MFoiIGZpbGw9IiNDQkQtNDY2Ii8+Cjwvc3ZnPgo='">
+                    <img 
+                        src="${this.escapeHtml(imageUrl)}" 
+                        alt="${this.escapeHtml(title)}" 
+                        referrerpolicy="no-referrer"
+                        onerror="if (this.dataset.fallback!=='1' && '${this.escapeHtml(item.originalImage || '')}') { this.dataset.fallback='1'; this.src='${this.escapeHtml(item.originalImage || '')}'; } else { this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjFGNUY5Ii8+CjxwYXRoIGQ9Ik0xMDAgNzBDODguOTU0MyA3MCA4MCA3OC45NTQzIDgwIDkwQzgwIDEwMS4wNDYgODguOTU0MyAxMTAgMTAwIDExMEMxMTEuMDQ2IDExMCAxMjAgMTAxLjA0NiAxMjAgOTBDMTIwIDc4Ljk1NDMgMTExLjA0NiA3MCAxMDAgNzBaIiBmaWxsPSIjQ0JELTQ2NiIvPgo8cGF0aCBkPSJNMTYwIDE2MEg0MEM0MCAxNjAgNDAgMTYwIDQwIDE2MFYxMjBDNDAgMTIwIDQwIDEyMCA0MCAxMjBIMTYwQzE2MCAxMjAgMTYwIDEyMCAxNjAgMTIwVjE2MFoiIGZpbGw9IiNDQkQtNDY2Ii8+Cjwvc3ZnPgo='; }"
+                    />
                 </div>
                 <div class="card-meta">
                     <h3 class="card-title">${this.escapeHtml(title)}</h3>
@@ -512,55 +543,7 @@ class WantApp {
         }
     }
 
-    // 2) Core add routine used by paste handler
-    async saveUrlToWant(raw) {
-        const url = this.normalizeUrl(raw);
-        if (!this.isProbablyUrl(url)) return false;
 
-        // Enrich via Worker
-        const meta = await this.enrichFromMeta(url);
-        const fallbackMeta = this.extractBasicMetadata(url);
-
-        const host = this.hostnameOf(url);
-        const image = meta?.image || fallbackMeta.image;
-        const title = meta?.title || fallbackMeta.title;
-        const price = meta?.price || fallbackMeta.price;
-
-        const item = {
-            id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
-            url,
-            title,
-            price,
-            image,
-            domain: this.normalizedDomainFrom(url),
-            createdAt: Date.now()
-        };
-
-        // Upsert by URL (update existing or insert new)
-        const savedId = await this.upsertItem(item);
-        await this.loadItems();
-
-        // Toast + optional actions
-        if (price) {
-            this.showToast("Saved to Want", { 
-                action: { 
-                    label: "Undo", 
-                    onClick: async () => { 
-                        await this.deleteItem(savedId); 
-                        await this.loadItems(); 
-                    } 
-                } 
-            });
-        } else {
-            this.showToast("Saved — add price", { 
-                action: { 
-                    label: "Edit", 
-                    onClick: () => this.openEditForUrl(url) 
-                } 
-            });
-        }
-        return true;
-    }
 
     async enrichFromMeta(url) {
         if (!this.META_ENDPOINT) return null;
@@ -580,11 +563,11 @@ class WantApp {
                 return null;
             }
             
-            // Process image URL - use original URL if weserv.nl fails
+            // Process image URL - store original for fallback
             let image = '';
             if (d.image) {
-                // Try weserv.nl first, fallback to original URL
-                image = `https://images.weserv.nl/?url=${encodeURIComponent(d.image)}&w=800&h=800&fit=cover`;
+                // Store original URL for fallback, use weserv.nl for display
+                image = d.image;
             }
             
             return {
@@ -647,15 +630,28 @@ class WantApp {
         const previewPrice = document.getElementById('previewPrice');
         const previewDomain = document.getElementById('previewDomain');
 
-        // Set image with fallback
+        // Set image with Safari-friendly fallback
+        const fallbackImg = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
+        
         if (image) {
-            previewImg.src = image;
-            previewImg.onerror = () => {
-                // Fallback to favicon if image fails to load
-                previewImg.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
-            };
+            // meta.image is the weserv-proxied URL your code builds.
+            // we'll also keep the original for fallback.
+            const original = image;
+            const proxied = original ? `https://images.weserv.nl/?url=${encodeURIComponent(original)}&w=800&h=800&fit=cover` : '';
+
+            if (previewImg) {
+                previewImg.referrerPolicy = 'no-referrer';     // helps with hotlinking blocks
+                previewImg.src = proxied || fallbackImg;
+                previewImg.onerror = () => {
+                    if (original && previewImg.src !== original) {
+                        previewImg.src = original; // fallback to original
+                    } else {
+                        previewImg.src = fallbackImg; // final fallback to favicon
+                    }
+                };
+            }
         } else {
-            previewImg.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
+            previewImg.src = fallbackImg;
         }
         
         previewTitle.textContent = title;
@@ -701,7 +697,7 @@ class WantApp {
     }
 
     updateAddButton(enabled) {
-        const addBtn = document.getElementById('addBtn');
+        const addBtn = document.getElementById('addItemBtn');
         console.log('updateAddButton called with enabled:', enabled);
         addBtn.disabled = !enabled;
         console.log('Button disabled state:', addBtn.disabled);
