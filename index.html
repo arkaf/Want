@@ -18,7 +18,9 @@
 </head>
 <body>
     <header>
-        <h1>Want</h1>
+        <div class="header-left">
+            <img src="assets/want.svg" alt="Want" class="logo" />
+        </div>
         <div class="header-actions">
             <button id="settingsBtn" class="settings-btn" title="Settings">⚙️</button>
             <button id="openAddBtn" class="add-btn">+ Add</button>
@@ -113,6 +115,13 @@
 
     <!-- Toast -->
     <div id="toast" class="toast" style="display: none;"></div>
+
+    <!-- More menu (reused for all cards) -->
+    <div id="moreMenuBackdrop" class="menu-backdrop" hidden></div>
+    <div id="moreMenu" class="menu" role="menu" hidden>
+        <button type="button" class="menu-item" data-action="share" role="menuitem">Share</button>
+        <button type="button" class="menu-item danger" data-action="delete" role="menuitem">Delete</button>
+    </div>
 
     <script src="vendor/idb.min.js"></script>
     <script src="db.js"></script>

@@ -25,6 +25,18 @@ header {
     z-index: 100;
 }
 
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.logo {
+    height: 32px;
+    width: auto;
+    display: block;
+}
+
 .header-actions {
     display: flex;
     gap: 0.5rem;
@@ -106,17 +118,40 @@ main {
 }
 
 .img-wrap {
+    position: relative;
+    width: 100%;
     aspect-ratio: 1 / 1;
-    border-radius: 12px;
     overflow: hidden;
+    border-radius: 12px;
     background: #f7f7f7;
 }
 
 .img-wrap img {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
+}
+
+/* More button (top-right over image) */
+.card-more {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    background: none;
+    border: none;
+    color: #111;
+    cursor: pointer;
+}
+
+.card-more:active {
+    transform: scale(0.96);
 }
 
 /* Texts below the image */
@@ -126,22 +161,78 @@ main {
 }
 
 .card-title {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
     line-height: 1.25;
-    margin: 0 0 4px;
+    margin: 0 0 6px;
 }
 
 .card-price {
     font-size: 14px;
     font-weight: 700;
     line-height: 1.2;
+    margin: 0 0 4px;
 }
 
 .card-domain {
     font-size: 12px;
+    color: #6b7280;
     line-height: 1.2;
-    margin-top: 2px;
+}
+
+/* Overflow menu (iOS-style) */
+.menu-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.12);
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+.menu-backdrop.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.menu {
+    position: fixed;
+    z-index: 1001;
+    min-width: 180px;
+    background: #fff;
+    color: #111;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+}
+
+.menu[hidden] {
+    display: none !important;
+}
+
+.menu-item {
+    width: 100%;
+    text-align: left;
+    padding: 12px 14px;
+    font-size: 16px;
+    background: #fff;
+    border: 0;
+    border-bottom: 1px solid #f1f5f9;
+    cursor: pointer;
+}
+
+.menu-item:last-child {
+    border-bottom: 0;
+}
+
+.menu-item:hover {
+    background: #f8fafc;
+}
+
+.menu-item.danger {
+    color: #dc2626;
 }
 
 /* Remove any previous overlay styles */

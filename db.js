@@ -73,6 +73,12 @@ class WantDB {
         return await index.get(url);
     }
 
+    async getItemById(id) {
+        if (!this.db) await this.init();
+        
+        return await this.db.get(this.storeName, id);
+    }
+
     async deleteItem(id) {
         if (!this.db) await this.init();
         

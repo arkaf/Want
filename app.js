@@ -125,6 +125,9 @@ class WantApp {
             this.importData(e.target.files[0]);
         });
 
+        // More menu controller
+        this.setupMoreMenu();
+
         // 3) Global paste listener (preferred, works with browser paste)
         document.addEventListener("paste", async (e) => {
             const a = document.activeElement;
@@ -272,13 +275,18 @@ class WantApp {
         }
     }
 
+    proxiedImage(url, w = 800, h = 800) {
+        if (!url) return "";
+        return `https://images.weserv.nl/?url=${encodeURIComponent(url)}&w=${w}&h=${h}&fit=cover`;
+    }
+
     async buildItemFromUrl(url) {
         const host = this.hostnameOf(url);
         const meta = await this.enrichFromMeta(url); // must return {title,image,price} or null
 
         // image: prefer proxied, fallback favicon, runtime onerror → original
         const original = meta?.image || '';
-        const proxied = original ? `https://images.weserv.nl/?url=${encodeURIComponent(original)}&w=800&h=800&fit=cover` : '';
+        const proxied = original ? this.proxiedImage(original) : '';
         const fallback = `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
 
         return {
@@ -385,24 +393,34 @@ class WantApp {
         createItemCard(item) {
         const domain = item.domain || this.hostnameOf(item.url);
         const title = item.title || domain;
-        const imageUrl = item.image || this.getDefaultImage(domain);
+        const original = item.originalImage || "";
+        const proxied = item.image || (original ? this.proxiedImage(original) : "");
+        const fallback = this.getDefaultImage(domain);
 
         return `
             <a class="card" href="${this.escapeHtml(item.url)}" target="_blank" rel="noopener">
                 <div class="img-wrap">
                     <img 
-                        src="${this.escapeHtml(imageUrl)}" 
+                        src="${this.escapeHtml(proxied || fallback)}" 
                         alt="${this.escapeHtml(title)}" 
                         referrerpolicy="no-referrer"
-                        onerror="if (this.dataset.fallback!=='1' && '${this.escapeHtml(item.originalImage || '')}') { this.dataset.fallback='1'; this.src='${this.escapeHtml(item.originalImage || '')}'; } else { this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjFGNUY5Ii8+CjxwYXRoIGQ9Ik0xMDAgNzBDODguOTU0MyA3MCA4MCA3OC45NTQzIDgwIDkwQzgwIDEwMS4wNDYgODguOTU0MyAxMTAgMTAwIDExMEMxMTEuMDQ2IDExMCAxMjAgMTAxLjA0NiAxMjAgOTBDMTIwIDc4Ljk1NDMgMTExLjA0NiA3MCAxMDAgNzBaIiBmaWxsPSIjQ0JELTQ2NiIvPgo8cGF0aCBkPSJNMTYwIDE2MEg0MEM0MCAxNjAgNDAgMTYwIDQwIDE2MFYxMjBDNDAgMTIwIDQwIDEyMCA0MCAxMjBIMTYwQzE2MCAxMjAgMTYwIDEyMCAxNjAgMTIwVjE2MFoiIGZpbGw9IiNDQkQtNDY2Ii8+Cjwvc3ZnPgo='; }"
+                        data-original="${this.escapeHtml(original)}"
+                        onerror="if(this.dataset.fallback!=='1' && this.dataset.original){ this.dataset.fallback='1'; this.src=this.dataset.original; } else { this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjFGNUY5Ii8+CjxwYXRoIGQ9Ik0xMDAgNzBDODguOTU0MyA3MCA4MCA3OC45NTQzIDgwIDkwQzgwIDEwMS4wNDYgODguOTU0MyAxMTAgMTAwIDExMEMxMTEuMDQ2IDExMCAxMjAgMTAxLjA0NiAxMjAgOTBDMTIwIDc4Ljk1NDMgMTExLjA0NiA3MCAxMDAgNzBaIiBmaWxsPSIjQ0JELTQ2NiIvPgo8cGF0aCBkPSJNMTYwIDE2MEg0MEM0MCAxNjAgNDAgMTYwIDQwIDE2MFYxMjBDNDAgMTIwIDQwIDEyMCA0MCAxMjBIMTYwQzE2MCAxMjAgMTYwIDEyMCAxNjAgMTIwVjE2MFoiIGZpbGw9IiNDQkQtNDY2Ii8+Cjwvc3ZnPgo='; }"
                     />
+                    <button class="card-more" aria-label="More options" aria-haspopup="menu" aria-expanded="false" data-id="${item.id}">
+                        <!-- three dots (vertical) -->
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M12 13c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M12 6c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M12 20c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
                 </div>
                 <div class="card-meta">
                     <h3 class="card-title">${this.escapeHtml(title)}</h3>
                     <div class="card-price">${this.escapeHtml(item.price || "")}</div>
                     <div class="card-domain">${this.escapeHtml(domain)}</div>
                 </div>
-                <button class="delete-btn" id="delete-${item.id}" title="Delete item">×</button>
             </a>
         `;
     }
@@ -630,17 +648,15 @@ class WantApp {
         const previewPrice = document.getElementById('previewPrice');
         const previewDomain = document.getElementById('previewDomain');
 
-        // Set image with Safari-friendly fallback
+        // Set image with proxy-first approach
         const fallbackImg = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
         
         if (image) {
-            // meta.image is the weserv-proxied URL your code builds.
-            // we'll also keep the original for fallback.
             const original = image;
-            const proxied = original ? `https://images.weserv.nl/?url=${encodeURIComponent(original)}&w=800&h=800&fit=cover` : '';
+            const proxied = original ? this.proxiedImage(original) : '';
 
             if (previewImg) {
-                previewImg.referrerPolicy = 'no-referrer';     // helps with hotlinking blocks
+                previewImg.referrerPolicy = 'no-referrer';
                 previewImg.src = proxied || fallbackImg;
                 previewImg.onerror = () => {
                     if (original && previewImg.src !== original) {
@@ -791,6 +807,125 @@ class WantApp {
                 actionBtn.remove();
             }
         }, 5000); // Longer timeout for actions
+    }
+
+    setupMoreMenu() {
+        const moreMenu = document.getElementById('moreMenu');
+        const moreBackdrop = document.getElementById('moreMenuBackdrop');
+        let moreCurrentId = null;
+
+        const openMoreMenuFor = (targetBtn, itemId) => {
+            moreCurrentId = itemId;
+
+            // Compute position near the button (below-left)
+            const r = targetBtn.getBoundingClientRect();
+            const pad = 8;
+            const top = r.bottom + pad + window.scrollY;
+            const left = Math.min(
+                window.scrollX + r.left,
+                window.scrollX + window.innerWidth - (moreMenu.offsetWidth || 220) - pad
+            );
+
+            moreMenu.style.top = `${top}px`;
+            moreMenu.style.left = `${left}px`;
+            moreMenu.hidden = false;
+            moreBackdrop.hidden = false;
+            requestAnimationFrame(() => {
+                moreBackdrop.classList.add('active');
+            });
+
+            // A11y
+            targetBtn.setAttribute('aria-expanded', 'true');
+            moreMenu.focus?.();
+        };
+
+        const closeMoreMenu = () => {
+            moreBackdrop.classList.remove('active');
+            moreBackdrop.hidden = true;
+            moreMenu.hidden = true;
+
+            // Reset any expanded button
+            document.querySelectorAll('.card-more[aria-expanded="true"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+            moreCurrentId = null;
+        };
+
+        // Delegate click on card more buttons
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest?.('.card-more');
+            if (!btn) return;
+            e.preventDefault();
+            openMoreMenuFor(btn, btn.dataset.id);
+        });
+
+        // Backdrop / outside click / ESC
+        moreBackdrop.addEventListener('click', closeMoreMenu);
+        document.addEventListener('keydown', (e) => { 
+            if (e.key === 'Escape' && !moreMenu.hidden) closeMoreMenu(); 
+        });
+
+        // Menu actions
+        moreMenu.addEventListener('click', async (e) => {
+            const actionBtn = e.target.closest('.menu-item');
+            if (!actionBtn) return;
+            
+            const action = actionBtn.dataset.action;
+            if (!moreCurrentId) {
+                console.error('No current item ID for menu action');
+                closeMoreMenu();
+                return;
+            }
+
+            try {
+                // Try to get item from database first, then from memory
+                let item = await this.db.getItemById(moreCurrentId);
+                if (!item) {
+                    item = this.items?.find(i => i.id === moreCurrentId);
+                }
+                
+                if (!item) { 
+                    console.error('Item not found for ID:', moreCurrentId);
+                    this.showToast('Item not found', 'error');
+                    closeMoreMenu(); 
+                    return; 
+                }
+
+                if (action === 'share') {
+                    try {
+                        if (navigator.share) {
+                            await navigator.share({ 
+                                title: item.title || item.domain, 
+                                url: item.url 
+                            });
+                        } else {
+                            await navigator.clipboard.writeText(item.url);
+                            this.showToast('Link copied');
+                        }
+                    } catch(error) { 
+                        console.log('Share cancelled or failed:', error);
+                        // Don't show error for user cancellation
+                    }
+                }
+
+                if (action === 'delete') {
+                    const ok = confirm('Delete this item?');
+                    if (ok) {
+                        try {
+                            await this.db.deleteItem(item.id);
+                            await this.loadItems();
+                            this.showToast('Item deleted');
+                        } catch (error) {
+                            console.error('Failed to delete item:', error);
+                            this.showToast('Failed to delete item', 'error');
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Menu action failed:', error);
+                this.showToast('Action failed', 'error');
+            } finally {
+                closeMoreMenu();
+            }
+        });
     }
 }
 
