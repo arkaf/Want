@@ -2,7 +2,8 @@
 class QuickAdd {
     constructor() {
         this.db = new WantDB();
-        this.META_ENDPOINT = ''; // e.g. 'https://<your-worker>.workers.dev'
+        // Use our Cloudflare Worker for metadata (server-side scrape)
+        this.META_ENDPOINT = 'https://want.fiorearcangelodesign.workers.dev'; // no trailing /meta here
         this.init();
     }
 
@@ -58,26 +59,21 @@ class QuickAdd {
 
     async enrichFromMeta(url) {
         if (!this.META_ENDPOINT) return null;
-        
         try {
-            const response = await fetch(`${this.META_ENDPOINT}/meta?url=${encodeURIComponent(url)}`);
-            if (!response.ok) throw new Error('Server response not ok');
-            
-            const data = await response.json();
-            if (data.error) throw new Error(data.error);
-            
-            // Process image through weserv.nl for consistent sizing
-            const img = data.image 
-                ? `https://images.weserv.nl/?url=${encodeURIComponent(data.image)}&w=800&h=800&fit=cover`
+            const r = await fetch(`${this.META_ENDPOINT}/meta?url=${encodeURIComponent(url)}`, {
+                method: 'GET',
+            });
+            if (!r.ok) throw new Error('meta failed');
+            const d = await r.json();
+            const image = d.image
+                ? `https://images.weserv.nl/?url=${encodeURIComponent(d.image)}&w=800&h=800&fit=cover`
                 : '';
-                
-            return { 
-                title: data.title || '', 
-                image: img, 
-                price: data.price || '' 
+            return {
+                title: d.title || '',
+                image,
+                price: d.price || '',
             };
-        } catch (error) {
-            console.log('META_ENDPOINT failed, using fallback:', error);
+        } catch {
             return null;
         }
     }

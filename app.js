@@ -2,7 +2,8 @@
 class WantApp {
     constructor() {
         this.db = new WantDB();
-        this.META_ENDPOINT = ''; // e.g. 'https://<your-worker>.workers.dev'
+        // Use our Cloudflare Worker for metadata (server-side scrape)
+        this.META_ENDPOINT = 'https://want.fiorearcangelodesign.workers.dev'; // no trailing /meta here
         this.init();
     }
 
@@ -49,14 +50,14 @@ class WantApp {
         });
 
         // URL field auto-extraction
-        const urlField = document.getElementById('url');
-        urlField.addEventListener('paste', (e) => {
-            setTimeout(() => this.extractMetadata(), 100);
-        });
-        urlField.addEventListener('blur', () => {
-            if (urlField.value) {
-                this.extractMetadata();
-            }
+        const urlInput = document.getElementById('urlInput');
+        urlInput.addEventListener('input', () => this.handleUrlInput(urlInput.value.trim()));
+        urlInput.addEventListener('paste', () => setTimeout(() => this.handleUrlInput(urlInput.value.trim()), 0));
+        urlInput.addEventListener('blur', () => this.handleUrlInput(urlInput.value.trim()));
+
+        // Toggle advanced fields
+        document.getElementById('toggleAdvanced').addEventListener('click', () => {
+            this.toggleAdvancedFields();
         });
 
         // Settings modal
@@ -87,6 +88,39 @@ class WantApp {
         document.getElementById('importFile').addEventListener('change', (e) => {
             this.importData(e.target.files[0]);
         });
+
+        // 3) Global paste listener (preferred, works with browser paste)
+        document.addEventListener("paste", async (e) => {
+            // ignore if user is typing in an input/textarea/contenteditable
+            const a = document.activeElement;
+            const isEditable = a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable);
+            if (isEditable) return;
+
+            const text = (e.clipboardData || window.clipboardData)?.getData("text")?.trim();
+            if (!text) return;
+            const added = await this.saveUrlToWant(text);
+            if (added) e.preventDefault(); // avoid pasting the URL into some random focusable
+        });
+
+        // 4) Bonus: Cmd/Ctrl+V fallback using Clipboard API (for cases where 'paste' doesn't fire)
+        document.addEventListener("keydown", async (e) => {
+            const isPaste = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v";
+            if (!isPaste) return;
+
+            const a = document.activeElement;
+            const isEditable = a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable);
+            if (isEditable) return;
+
+            if (navigator.clipboard?.readText) {
+                try {
+                    const text = (await navigator.clipboard.readText())?.trim();
+                    if (text) {
+                        const added = await this.saveUrlToWant(text);
+                        if (added) e.preventDefault();
+                    }
+                } catch { /* ignore */ }
+            }
+        });
     }
 
     showModal() {
@@ -97,6 +131,10 @@ class WantApp {
     hideModal() {
         document.getElementById('addModal').style.display = 'none';
         document.getElementById('addForm').reset();
+        this.hidePreview();
+        document.getElementById('advanced').classList.add('hidden');
+        document.getElementById('toggleAdvanced').textContent = 'Edit details';
+        this.updateAddButton(false);
     }
 
     showSettingsModal() {
@@ -108,14 +146,26 @@ class WantApp {
     }
 
     async handleAddItem() {
-        const form = document.getElementById('addForm');
-        const formData = new FormData(form);
+        const urlInput = document.getElementById('urlInput');
+        const titleInput = document.getElementById('titleInput');
+        const priceInput = document.getElementById('priceInput');
+        const imageInput = document.getElementById('imageInput');
         
+        const url = urlInput.value.trim();
+        const title = titleInput.value.trim();
+        const price = priceInput.value.trim();
+        const image = imageInput.value.trim();
+
+        // Use advanced field values if available, otherwise use preview data
+        const finalTitle = title || document.getElementById('previewTitle').textContent;
+        const finalPrice = price || document.getElementById('previewPrice').textContent;
+        const finalImage = image || document.getElementById('previewImg').src;
+
         const item = {
-            url: formData.get('url'),
-            title: formData.get('title'),
-            price: formData.get('price'),
-            image: formData.get('image')
+            url: url,
+            title: finalTitle,
+            price: finalPrice === 'N/A' ? '' : finalPrice,
+            image: finalImage
         };
 
         try {
@@ -185,6 +235,32 @@ class WantApp {
         return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
     }
 
+    async upsertItem(item) {
+        try {
+            // Check if item with same URL exists
+            const existingItem = await this.db.getItemByUrl(item.url);
+            if (existingItem) {
+                // Update existing item
+                const updatedItem = { 
+                    ...existingItem, 
+                    title: item.title,
+                    price: item.price,
+                    image: item.image,
+                    createdAt: Date.now() // Refresh timestamp
+                };
+                await this.db.db.put(this.db.storeName, updatedItem);
+                return existingItem.id;
+            } else {
+                // Add new item
+                const newItem = await this.db.addItem(item);
+                return newItem.id;
+            }
+        } catch (error) {
+            console.error('Error upserting item:', error);
+            throw error;
+        }
+    }
+
     async deleteItem(id) {
         if (confirm('Are you sure you want to delete this item?')) {
             try {
@@ -198,66 +274,209 @@ class WantApp {
         }
     }
 
-    async extractMetadata() {
-        const url = document.getElementById('url').value.trim();
-        if (!url) return;
+    // 1) URL helpers
+    isProbablyUrl(str) {
+        try {
+            const u = new URL(str);
+            return /^https?:$/.test(u.protocol);
+        } catch {
+            return /^[\w.-]+\.[a-z]{2,}([\/?#].*)?$/i.test(str);
+        }
+    }
+
+    normalizeUrl(str) {
+        if (/^https?:\/\//i.test(str)) return str.trim();
+        if (/^[\w.-]+\.[a-z]{2,}([\/?#].*)?$/i.test(str)) return `https://${str.trim()}`;
+        return str.trim();
+    }
+
+    hostnameOf(u) { 
+        try { 
+            return new URL(u).hostname; 
+        } catch { 
+            return ''; 
+        } 
+    }
+
+    async handleUrlInput(url) {
+        if (!url) {
+            this.hidePreview();
+            this.updateAddButton(false);
+            return;
+        }
+
+        // Check if URL is valid
+        if (!this.isProbablyUrl(url)) {
+            this.hidePreview();
+            this.updateAddButton(false);
+            return;
+        }
+
+        // Enable add button for valid URL
+        this.updateAddButton(true);
+
+        // Show loading state
+        this.showPreviewLoading();
 
         try {
-            // 1) Try server-side enrichment
             const meta = await this.enrichFromMeta(url);
-            
-            // 2) Fallbacks (client-side)
-            const host = new URL(url).hostname;
+            const host = this.hostnameOf(url);
             const fallbackImg = `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
-            
+
             const title = meta?.title || host;
             const image = meta?.image || fallbackImg;
             const price = meta?.price || '';
-            
-            // Pre-fill form fields (still editable)
-            this.setFormValues({ url, title, image, price });
-            
+
+            // Update preview
+            this.updatePreview({ title, image, price, domain: host });
+            this.showPreview();
+
+            // Update advanced fields if they're visible
+            if (!document.getElementById('advanced').classList.contains('hidden')) {
+                this.setAdvancedFormValues({ title, image, price });
+            }
         } catch (error) {
-            console.error('Error extracting metadata:', error);
+            console.error('Error handling URL input:', error);
+            this.hidePreview();
         }
+    }
+
+    // 2) Core add routine used by paste handler
+    async saveUrlToWant(raw) {
+        const url = this.normalizeUrl(raw);
+        if (!this.isProbablyUrl(url)) return false;
+
+        // Enrich via Worker
+        const meta = await this.enrichFromMeta(url);
+
+        const host = this.hostnameOf(url);
+        const image = meta?.image || `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
+        const title = meta?.title || host;
+        const price = meta?.price || "";
+
+        const item = {
+            id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
+            url,
+            title,
+            price,
+            image,
+            domain: host,
+            createdAt: Date.now()
+        };
+
+        // Upsert by URL (update existing or insert new)
+        const savedId = await this.upsertItem(item);
+        await this.loadItems();
+
+        // Toast + optional actions
+        if (price) {
+            this.showToast("Saved to Want", { 
+                action: { 
+                    label: "Undo", 
+                    onClick: async () => { 
+                        await this.deleteItem(savedId); 
+                        await this.loadItems(); 
+                    } 
+                } 
+            });
+        } else {
+            this.showToast("Saved — add price", { 
+                action: { 
+                    label: "Edit", 
+                    onClick: () => this.openEditForUrl(url) 
+                } 
+            });
+        }
+        return true;
     }
 
     async enrichFromMeta(url) {
         if (!this.META_ENDPOINT) return null;
-        
         try {
-            const response = await fetch(`${this.META_ENDPOINT}/meta?url=${encodeURIComponent(url)}`);
-            if (!response.ok) throw new Error('Server response not ok');
-            
-            const data = await response.json();
-            if (data.error) throw new Error(data.error);
-            
-            // Process image through weserv.nl for consistent sizing
-            const img = data.image 
-                ? `https://images.weserv.nl/?url=${encodeURIComponent(data.image)}&w=800&h=800&fit=cover`
+            const r = await fetch(`${this.META_ENDPOINT}/meta?url=${encodeURIComponent(url)}`, {
+                method: 'GET',
+            });
+            if (!r.ok) throw new Error('meta failed');
+            const d = await r.json();
+            const image = d.image
+                ? `https://images.weserv.nl/?url=${encodeURIComponent(d.image)}&w=800&h=800&fit=cover`
                 : '';
-                
-            return { 
-                title: data.title || '', 
-                image: img, 
-                price: data.price || '' 
+            return {
+                title: d.title || '',
+                image,
+                price: d.price || '',
             };
-        } catch (error) {
-            console.log('META_ENDPOINT failed, using fallback:', error);
+        } catch {
             return null;
         }
     }
 
-    setFormValues({ url, title, image, price }) {
-        const urlField = document.getElementById('url');
-        const titleField = document.getElementById('title');
-        const priceField = document.getElementById('price');
-        const imageField = document.getElementById('image');
+    showPreviewLoading() {
+        const preview = document.getElementById('metaPreview');
+        const previewImg = document.getElementById('previewImg');
+        const previewTitle = document.getElementById('previewTitle');
+        const previewPrice = document.getElementById('previewPrice');
+        const previewDomain = document.getElementById('previewDomain');
+
+        preview.classList.remove('hidden');
+        previewImg.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDEyMCAxMjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxMjAiIGhlaWdodD0iMTIwIiBmaWxsPSIjRjFGNUY5Ii8+CjxwYXRoIGQ9Ik02MCAzNEM0OC45NTQzIDM0IDQwIDQyLjk1NDMgNDAgNTBDNDAgNTcuMDQ2IDQ4Ljk1NDMgNjYgNjAgNjZDNzEuMDQ2IDY2IDgwIDU3LjA0NiA4MCA1MEM4MCA0Mi45NTQzIDcxLjA0NiAzNCA2MCAzNFoiIGZpbGw9IiNDQkQtNDY2Ii8+CjxwYXRoIGQ9Ijk2IDk2SDI0QzI0IDk2IDI0IDk2IDI0IDk2VjcyQzI0IDcyIDI0IDcyIDI0IDcySDk2Qzk2IDcyIDk2IDcyIDk2IDcyVjk2WiIgZmlsbD0iI0NCQi00NjYiLz4KPC9zdmc+Cg==';
+        previewTitle.textContent = 'Loading...';
+        previewPrice.textContent = '';
+        previewDomain.textContent = '';
+    }
+
+    updatePreview({ title, image, price, domain }) {
+        const previewImg = document.getElementById('previewImg');
+        const previewTitle = document.getElementById('previewTitle');
+        const previewPrice = document.getElementById('previewPrice');
+        const previewDomain = document.getElementById('previewDomain');
+
+        previewImg.src = image;
+        previewTitle.textContent = title;
+        previewPrice.textContent = price || 'N/A';
+        previewDomain.textContent = domain;
+    }
+
+    showPreview() {
+        document.getElementById('metaPreview').classList.remove('hidden');
+    }
+
+    hidePreview() {
+        document.getElementById('metaPreview').classList.add('hidden');
+    }
+
+    toggleAdvancedFields() {
+        const advanced = document.getElementById('advanced');
+        const toggleBtn = document.getElementById('toggleAdvanced');
         
-        // Only pre-fill if fields are empty
-        if (title && !titleField.value) titleField.value = title;
-        if (price && !priceField.value) priceField.value = price;
-        if (image && !imageField.value) imageField.value = image;
+        if (advanced.classList.contains('hidden')) {
+            advanced.classList.remove('hidden');
+            toggleBtn.textContent = 'Hide details';
+            
+            // Pre-fill advanced fields with current preview data
+            const urlInput = document.getElementById('urlInput');
+            if (urlInput.value) {
+                this.handleUrlInput(urlInput.value.trim());
+            }
+        } else {
+            advanced.classList.add('hidden');
+            toggleBtn.textContent = 'Edit details';
+        }
+    }
+
+    setAdvancedFormValues({ title, image, price }) {
+        const titleInput = document.getElementById('titleInput');
+        const priceInput = document.getElementById('priceInput');
+        const imageInput = document.getElementById('imageInput');
+        
+        titleInput.value = title;
+        priceInput.value = price;
+        imageInput.value = image;
+    }
+
+    updateAddButton(enabled) {
+        const addBtn = document.getElementById('addBtn');
+        addBtn.disabled = !enabled;
     }
 
 
@@ -290,7 +509,39 @@ class WantApp {
         document.getElementById('importFile').value = '';
     }
 
-    showToast(message, type = 'success') {
+    openEditForUrl(url) {
+        // Find the item by URL and open edit modal
+        this.db.getItemByUrl(url).then(item => {
+            if (item) {
+                // Pre-fill the form with existing data
+                document.getElementById('urlInput').value = item.url;
+                document.getElementById('titleInput').value = item.title;
+                document.getElementById('priceInput').value = item.price;
+                document.getElementById('imageInput').value = item.image;
+                
+                // Show advanced fields and update preview
+                document.getElementById('advanced').classList.remove('hidden');
+                document.getElementById('toggleAdvanced').textContent = 'Hide details';
+                
+                // Update preview
+                this.updatePreview({ 
+                    title: item.title, 
+                    image: item.image, 
+                    price: item.price, 
+                    domain: item.domain 
+                });
+                this.showPreview();
+                this.updateAddButton(true);
+                
+                // Show the modal
+                this.showModal();
+            }
+        }).catch(error => {
+            console.error('Error finding item for edit:', error);
+        });
+    }
+
+    showToast(message, type = 'success', options = {}) {
         const toast = document.getElementById('toast');
         toast.textContent = message;
         toast.style.display = 'block';
@@ -301,9 +552,23 @@ class WantApp {
             toast.style.background = '#000000';
         }
 
+        // Add action button if provided
+        if (options.action) {
+            const actionBtn = document.createElement('button');
+            actionBtn.textContent = options.action.label;
+            actionBtn.className = 'toast-action';
+            actionBtn.onclick = options.action.onClick;
+            toast.appendChild(actionBtn);
+        }
+
         setTimeout(() => {
             toast.style.display = 'none';
-        }, 3000);
+            // Clean up action button
+            const actionBtn = toast.querySelector('.toast-action');
+            if (actionBtn) {
+                actionBtn.remove();
+            }
+        }, 5000); // Longer timeout for actions
     }
 }
 

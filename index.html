@@ -39,24 +39,41 @@
             </div>
             <form id="addForm">
                 <div class="form-group">
-                    <label for="url">URL *</label>
-                    <input type="url" id="url" name="url" required placeholder="https://example.com">
+                    <label for="urlInput">URL *</label>
+                    <input type="url" id="urlInput" name="url" required placeholder="https://example.com">
                 </div>
-                <div class="form-group">
-                    <label for="title">Title *</label>
-                    <input type="text" id="title" name="title" required placeholder="Item title">
+
+                <div id="metaPreview" class="hidden preview">
+                    <div class="card">
+                        <img id="previewImg" alt="" />
+                        <div class="card-footer">
+                            <span id="previewPrice"></span>
+                            <span id="previewDomain"></span>
+                        </div>
+                    </div>
+                    <div class="preview-title" id="previewTitle"></div>
+                    <button type="button" id="toggleAdvanced" class="linklike">Edit details</button>
                 </div>
-                <div class="form-group">
-                    <label for="price">Price</label>
-                    <input type="text" id="price" name="price" placeholder="$99.99">
+
+                <!-- Advanced fields (hidden by default) -->
+                <div id="advanced" class="hidden">
+                    <div class="form-group">
+                        <label for="titleInput">Title</label>
+                        <input type="text" id="titleInput" name="title">
+                    </div>
+                    <div class="form-group">
+                        <label for="priceInput">Price</label>
+                        <input type="text" id="priceInput" name="price" placeholder="$99.99">
+                    </div>
+                    <div class="form-group">
+                        <label for="imageInput">Image URL</label>
+                        <input type="url" id="imageInput" name="image" placeholder="https://example.com/image.jpg">
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="image">Image URL (optional)</label>
-                    <input type="url" id="image" name="image" placeholder="https://example.com/image.jpg">
-                </div>
+
                 <div class="form-actions">
                     <button type="button" id="cancelBtn" class="btn-secondary">Cancel</button>
-                    <button type="submit" class="btn-primary">Add Item</button>
+                    <button type="submit" id="addBtn" class="btn-primary" disabled>Add Item</button>
                 </div>
             </form>
         </div>
