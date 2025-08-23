@@ -398,9 +398,14 @@ class WantApp {
             });
             if (!r.ok) throw new Error('meta failed');
             const d = await r.json();
-            const image = d.image
-                ? `https://images.weserv.nl/?url=${encodeURIComponent(d.image)}&w=800&h=800&fit=cover`
-                : '';
+            
+            // Process image URL - use original URL if weserv.nl fails
+            let image = '';
+            if (d.image) {
+                // Try weserv.nl first, fallback to original URL
+                image = `https://images.weserv.nl/?url=${encodeURIComponent(d.image)}&w=800&h=800&fit=cover`;
+            }
+            
             return {
                 title: d.title || '',
                 image,
@@ -431,7 +436,17 @@ class WantApp {
         const previewPrice = document.getElementById('previewPrice');
         const previewDomain = document.getElementById('previewDomain');
 
-        previewImg.src = image;
+        // Set image with fallback
+        if (image) {
+            previewImg.src = image;
+            previewImg.onerror = () => {
+                // Fallback to favicon if image fails to load
+                previewImg.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
+            };
+        } else {
+            previewImg.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
+        }
+        
         previewTitle.textContent = title;
         previewPrice.textContent = price || 'N/A';
         previewDomain.textContent = domain;
@@ -479,7 +494,39 @@ class WantApp {
         addBtn.disabled = !enabled;
     }
 
+    async handleAddItem() {
+        const urlInput = document.getElementById('urlInput');
+        const titleInput = document.getElementById('titleInput');
+        const priceInput = document.getElementById('priceInput');
+        const imageInput = document.getElementById('imageInput');
+        
+        const url = urlInput.value.trim();
+        const title = titleInput.value.trim();
+        const price = priceInput.value.trim();
+        const image = imageInput.value.trim();
 
+        // Use advanced field values if available, otherwise use preview data
+        const finalTitle = title || document.getElementById('previewTitle').textContent;
+        const finalPrice = price || document.getElementById('previewPrice').textContent;
+        const finalImage = image || document.getElementById('previewImg').src;
+
+        const item = {
+            url: url,
+            title: finalTitle,
+            price: finalPrice === 'N/A' ? '' : finalPrice,
+            image: finalImage
+        };
+
+        try {
+            await this.db.addItem(item);
+            this.hideModal();
+            await this.loadItems();
+            this.showToast('Item added to Want');
+        } catch (error) {
+            console.error('Error adding item:', error);
+            this.showToast('Error adding item', 'error');
+        }
+    }
 
     async exportData() {
         try {

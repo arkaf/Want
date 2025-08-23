@@ -1,5 +1,5 @@
 // Service Worker for Want PWA
-const CACHE_NAME = 'want-v4';
+const CACHE_NAME = 'want-v5';
 const urlsToCache = [
     '/',
     '/index.html',
