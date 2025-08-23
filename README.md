@@ -8,15 +8,20 @@ A super-simple, offline-first Progressive Web App for managing your personal wis
 - 🎯 **Simple Grid** - Clean 1:1 square cards showing your items
 - 🔗 **Quick Add** - Add items via URL parameters or form
 - 💾 **Local Storage** - All data stored locally using IndexedDB
-- 🖼️ **Auto Images** - Automatically fetches images from URLs
+- 🖼️ **Smart Auto-Extraction** - Server-side metadata scraping via Cloudflare Worker
+- 🎨 **Black & White Theme** - Clean, minimal aesthetic
 - 📱 **Mobile First** - Responsive design that works on all devices
 - 🚫 **No Backend** - Completely client-side, no server required
+- 💾 **Data Backup** - Export/Import JSON for data preservation
 
 ## Usage
 
 ### Adding Items
 
 1. **Via Form**: Click the "+ Add" button and fill out the form
+   - Paste a URL to auto-extract title, image, and price
+   - Uses Cloudflare Worker for server-side scraping
+   - Falls back to client-side extraction if worker unavailable
 2. **Via URL**: Use `add.html?url=...&title=...&price=...` for quick adding
 3. **Bookmarklet**: Create a bookmarklet for one-click adding
 
@@ -52,9 +57,12 @@ javascript:(function(){
 ├── sw.js               # Service worker
 ├── vendor/
 │   └── idb.min.js      # IndexedDB helper library
-└── assets/
-    ├── icon-192.png    # App icon (192x192)
-    └── icon-512.png    # App icon (512x512)
+├── assets/
+│   ├── icon-192.png    # App icon (192x192)
+│   └── icon-512.png    # App icon (512x512)
+├── workers/
+│   └── meta-scraper.js # Cloudflare Worker for metadata scraping
+└── DEPLOYMENT.md       # Worker deployment guide
 ```
 
 ## Data Schema
@@ -81,6 +89,15 @@ This app is designed to work on any static hosting service:
 - **Netlify**: Drag and drop the folder
 - **Vercel**: Connect your repository
 - **Any static host**: Upload all files
+
+### Cloudflare Worker Setup
+
+For enhanced metadata extraction, deploy the included Cloudflare Worker:
+
+1. See `DEPLOYMENT.md` for detailed instructions
+2. Deploy `workers/meta-scraper.js` to Cloudflare Workers
+3. Update `META_ENDPOINT` in `app.js` and `add.js`
+4. The app works without the worker but with limited extraction
 
 ## Browser Support
 

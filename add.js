@@ -2,6 +2,7 @@
 class QuickAdd {
     constructor() {
         this.db = new WantDB();
+        this.META_ENDPOINT = ''; // e.g. 'https://<your-worker>.workers.dev'
         this.init();
     }
 
@@ -23,22 +24,24 @@ class QuickAdd {
         }
 
         try {
-            // Try to fetch metadata if title is not provided
+            // Try to fetch metadata if not provided
             let finalTitle = title;
             let finalImage = image;
+            let finalPrice = price;
             
-            if (!finalTitle) {
-                finalTitle = await this.fetchTitle(url);
-            }
-            
-            if (!finalImage) {
-                finalImage = await this.fetchImage(url);
+            if (!finalTitle || !finalImage || !finalPrice) {
+                const meta = await this.enrichFromMeta(url);
+                if (meta) {
+                    if (!finalTitle) finalTitle = meta.title;
+                    if (!finalImage) finalImage = meta.image;
+                    if (!finalPrice) finalPrice = meta.price;
+                }
             }
 
             const item = {
                 url: url,
                 title: finalTitle || 'Untitled Item',
-                price: price || '',
+                price: finalPrice || '',
                 image: finalImage || ''
             };
 
@@ -53,58 +56,30 @@ class QuickAdd {
         }
     }
 
-    async fetchTitle(url) {
+    async enrichFromMeta(url) {
+        if (!this.META_ENDPOINT) return null;
+        
         try {
-            // Try to fetch the page and extract title
-            const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
-            const data = await response.json();
+            const response = await fetch(`${this.META_ENDPOINT}/meta?url=${encodeURIComponent(url)}`);
+            if (!response.ok) throw new Error('Server response not ok');
             
-            if (data.contents) {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(data.contents, 'text/html');
-                const title = doc.querySelector('title');
-                return title ? title.textContent.trim() : null;
-            }
-        } catch (error) {
-            console.log('Could not fetch title:', error);
-        }
-        return null;
-    }
-
-    async fetchImage(url) {
-        try {
-            // Try to fetch Open Graph image
-            const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
             const data = await response.json();
+            if (data.error) throw new Error(data.error);
             
-            if (data.contents) {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(data.contents, 'text/html');
+            // Process image through weserv.nl for consistent sizing
+            const img = data.image 
+                ? `https://images.weserv.nl/?url=${encodeURIComponent(data.image)}&w=800&h=800&fit=cover`
+                : '';
                 
-                // Try og:image first
-                const ogImage = doc.querySelector('meta[property="og:image"]');
-                if (ogImage && ogImage.content) {
-                    return ogImage.content;
-                }
-                
-                // Try twitter:image
-                const twitterImage = doc.querySelector('meta[name="twitter:image"]');
-                if (twitterImage && twitterImage.content) {
-                    return twitterImage.content;
-                }
-                
-                // Try first image with reasonable size
-                const images = doc.querySelectorAll('img');
-                for (let img of images) {
-                    if (img.src && img.width >= 200 && img.height >= 200) {
-                        return img.src;
-                    }
-                }
-            }
+            return { 
+                title: data.title || '', 
+                image: img, 
+                price: data.price || '' 
+            };
         } catch (error) {
-            console.log('Could not fetch image:', error);
+            console.log('META_ENDPOINT failed, using fallback:', error);
+            return null;
         }
-        return null;
     }
 
     showError(message) {

@@ -199,74 +199,68 @@ class WantApp {
     }
 
     async extractMetadata() {
-        const urlField = document.getElementById('url');
-        const titleField = document.getElementById('title');
-        const priceField = document.getElementById('price');
-        const imageField = document.getElementById('image');
-        
-        const url = urlField.value.trim();
+        const url = document.getElementById('url').value.trim();
         if (!url) return;
 
         try {
-            let metadata = null;
+            // 1) Try server-side enrichment
+            const meta = await this.enrichFromMeta(url);
             
-            // Try META_ENDPOINT first
-            if (this.META_ENDPOINT) {
-                try {
-                    const response = await fetch(`${this.META_ENDPOINT}/meta?url=${encodeURIComponent(url)}`);
-                    if (response.ok) {
-                        metadata = await response.json();
-                    }
-                } catch (error) {
-                    console.log('META_ENDPOINT failed, using fallback:', error);
-                }
-            }
+            // 2) Fallbacks (client-side)
+            const host = new URL(url).hostname;
+            const fallbackImg = `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
             
-            // Fallback logic
-            if (!metadata) {
-                metadata = await this.extractMetadataFallback(url);
-            }
+            const title = meta?.title || host;
+            const image = meta?.image || fallbackImg;
+            const price = meta?.price || '';
             
-            // Pre-fill form fields
-            if (metadata.title && !titleField.value) {
-                titleField.value = metadata.title;
-            }
-            if (metadata.price && !priceField.value) {
-                priceField.value = metadata.price;
-            }
-            if (metadata.image && !imageField.value) {
-                imageField.value = metadata.image;
-            }
+            // Pre-fill form fields (still editable)
+            this.setFormValues({ url, title, image, price });
             
         } catch (error) {
             console.error('Error extracting metadata:', error);
         }
     }
 
-    async extractMetadataFallback(url) {
-        const metadata = {};
+    async enrichFromMeta(url) {
+        if (!this.META_ENDPOINT) return null;
         
         try {
-            // Extract domain for title fallback
-            const urlObj = new URL(url);
-            metadata.title = urlObj.hostname.replace('www.', '');
+            const response = await fetch(`${this.META_ENDPOINT}/meta?url=${encodeURIComponent(url)}`);
+            if (!response.ok) throw new Error('Server response not ok');
             
-            // Extract price from URL/text
-            const priceRegex = /(?:£|\$|€)\s?\d{1,5}(?:[.,]\d{1,2})?/;
-            const priceMatch = url.match(priceRegex);
-            if (priceMatch) {
-                metadata.price = priceMatch[0];
-            }
+            const data = await response.json();
+            if (data.error) throw new Error(data.error);
             
-            // Get favicon as image fallback
-            metadata.image = `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`;
-            
+            // Process image through weserv.nl for consistent sizing
+            const img = data.image 
+                ? `https://images.weserv.nl/?url=${encodeURIComponent(data.image)}&w=800&h=800&fit=cover`
+                : '';
+                
+            return { 
+                title: data.title || '', 
+                image: img, 
+                price: data.price || '' 
+            };
         } catch (error) {
-            console.error('Error in fallback extraction:', error);
+            console.log('META_ENDPOINT failed, using fallback:', error);
+            return null;
         }
-        
-        return metadata;
     }
+
+    setFormValues({ url, title, image, price }) {
+        const urlField = document.getElementById('url');
+        const titleField = document.getElementById('title');
+        const priceField = document.getElementById('price');
+        const imageField = document.getElementById('image');
+        
+        // Only pre-fill if fields are empty
+        if (title && !titleField.value) titleField.value = title;
+        if (price && !priceField.value) priceField.value = price;
+        if (image && !imageField.value) imageField.value = image;
+    }
+
+
 
     async exportData() {
         try {
