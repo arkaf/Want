@@ -46,16 +46,27 @@ class WantApp {
             this.hideModal();
         });
 
+        // Elements
+        const modal = document.getElementById('addModal');
+        const backdrop = document.getElementById('modalBackdrop');
 
-
-        // Close modal on backdrop click
-        document.getElementById('addModal').addEventListener('click', (e) => {
-            if (e.target.id === 'addModal' || e.target.id === 'modalBackdrop') {
-                this.hideModal();
-            }
+        // Close only when clicking backdrop
+        backdrop.addEventListener('click', (e) => {
+            if (e.target === backdrop) this.hideModal();
         });
 
-        // Swipe to close on mobile
+        // Prevent inside clicks from bubbling up
+        modal.addEventListener('click', (e) => e.stopPropagation(), { passive: true });
+        modal.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+
+        // Don't close modal on input focus/blur
+        const urlInputEl = document.getElementById('urlInput');
+        if (urlInputEl) {
+            urlInputEl.addEventListener('focus', (e) => e.stopPropagation());
+            urlInputEl.addEventListener('blur', (e) => e.stopPropagation());
+        }
+
+        // Swipe to close on mobile (restricted to header)
         this.setupSwipeToClose();
 
         // Form submission
@@ -447,49 +458,39 @@ class WantApp {
 
     setupModalSwipeToClose(modalId, closeCallback) {
         const modal = document.getElementById(modalId);
-        let startY = 0;
-        let currentY = 0;
-        let isDragging = false;
+        let startY = null;
+        let currentY = null;
 
-        const handleTouchStart = (e) => {
+        // Only allow swipe from the grabber/header area
+        const grabberArea = modal.querySelector('.modal-grabber') || modal.querySelector('.modal-header');
+        
+        if (!grabberArea) return;
+
+        grabberArea.addEventListener('touchstart', (e) => {
             startY = e.touches[0].clientY;
-            isDragging = true;
-        };
+            currentY = startY;
+        }, { passive: true });
 
-        const handleTouchMove = (e) => {
-            if (!isDragging) return;
-            
+        grabberArea.addEventListener('touchmove', (e) => {
+            if (startY == null) return;
             currentY = e.touches[0].clientY;
-            const deltaY = currentY - startY;
-            
-            if (deltaY > 0) {
+            const delta = Math.max(0, currentY - startY);
+            if (window.matchMedia('(max-width: 768px)').matches) {
                 const modalContent = modal.querySelector('.modal-content');
-                modalContent.style.transform = `translateY(${deltaY}px)`;
+                modalContent.style.transform = `translateY(${delta}px)`; // visual feedback only
             }
-        };
+        }, { passive: true });
 
-        const handleTouchEnd = (e) => {
-            if (!isDragging) return;
-            
-            const deltaY = currentY - startY;
+        grabberArea.addEventListener('touchend', () => {
+            if (startY == null) return;
+            const delta = Math.max(0, (currentY ?? startY) - startY);
             const modalContent = modal.querySelector('.modal-content');
-            
-            if (deltaY > 100) {
-                // Swipe down threshold reached, close modal
+            modalContent.style.transform = '';
+            if (delta > 120 && window.matchMedia('(max-width: 768px)').matches) {
                 closeCallback();
-            } else {
-                // Reset position
-                modalContent.style.transform = '';
             }
-            
-            isDragging = false;
-        };
-
-        // Add touch listeners to modal content
-        const modalContent = modal.querySelector('.modal-content');
-        modalContent.addEventListener('touchstart', handleTouchStart, { passive: true });
-        modalContent.addEventListener('touchmove', handleTouchMove, { passive: true });
-        modalContent.addEventListener('touchend', handleTouchEnd, { passive: true });
+            startY = currentY = null;
+        });
     }
 
         createItemCard(item) {

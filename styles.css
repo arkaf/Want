@@ -23,6 +23,7 @@ body {
     /* remove any border-bottom/divider */
     border-bottom: 0 !important;
     box-shadow: none;
+    transition: box-shadow 0.3s ease;
 }
 
 .topbar-inner {
@@ -32,15 +33,22 @@ body {
     align-items: center;
 }
 
-/* Soft white fade under the topbar */
+/* Extended soft white fade under the topbar - no hard stops */
 .topbar::after {
     content: "";
     position: absolute;
     left: 0;
     right: 0;
-    bottom: -12px;
-    height: 24px;
-    background: linear-gradient(to bottom, rgba(255,255,255,0.9), rgba(255,255,255,0));
+    bottom: -48px;
+    height: 48px;
+    background: linear-gradient(
+        to bottom,
+        rgba(255,255,255,0.8) 0%,
+        rgba(255,255,255,0.6) 25%,
+        rgba(255,255,255,0.3) 50%,
+        rgba(255,255,255,0.1) 75%,
+        rgba(255,255,255,0) 100%
+    );
     pointer-events: none;
 }
 
@@ -119,8 +127,11 @@ h1 {
     padding: 1rem;
     max-width: 1200px;
     margin: 0 auto;
-    /* Make sure content isn't hidden behind the blurred bottom */
-    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0) + 24px);
+    /* Make sure content isn't hidden behind the extended blurred bottom */
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0) + 80px);
+    /* Add subtle blur to content area for seamless blending */
+    -webkit-backdrop-filter: blur(1px);
+    backdrop-filter: blur(1px);
 }
 
 /* Grid */
@@ -369,6 +380,8 @@ h1 {
     border-radius: 2px;
     margin: 12px auto;
     cursor: grab;
+    /* Prevent iOS Safari from stealing touches when dragging grabber */
+    touch-action: none;
 }
 
 .modal-grabber:active {
@@ -414,6 +427,8 @@ h1 {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    /* Prevent iOS Safari from stealing touches when dragging header */
+    touch-action: none;
 }
 
 .modal-header h2 {
@@ -730,19 +745,23 @@ h1 {
     right: 0;
     bottom: 0;
     z-index: 40;
-    height: calc(64px + env(safe-area-inset-bottom, 0) + 48px);
+    height: calc(64px + env(safe-area-inset-bottom, 0) + 80px);
     pointer-events: none;
 
     /* Blur effect */
     -webkit-backdrop-filter: saturate(180%) blur(20px);
     backdrop-filter: saturate(180%) blur(20px);
 
-    /* Smooth white fade upwards */
+    /* Extended smooth white fade upwards - no hard stops */
     background: linear-gradient(
         to top,
         rgba(255,255,255,1) 0%,
-        rgba(255,255,255,0.9) 30%,
-        rgba(255,255,255,0.6) 60%,
+        rgba(255,255,255,0.95) 15%,
+        rgba(255,255,255,0.8) 30%,
+        rgba(255,255,255,0.6) 45%,
+        rgba(255,255,255,0.4) 60%,
+        rgba(255,255,255,0.2) 75%,
+        rgba(255,255,255,0.05) 90%,
         rgba(255,255,255,0) 100%
     );
 }
