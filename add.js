@@ -1,33 +1,22 @@
-// Import Firebase functionality
-import { saveLink } from './src/firebase.js';
+// Cloudflare Worker API for items storage
+const API = "https://want.fiorearcangelodesign.workers.dev";
+const LIST_ID = localStorage.getItem('want.syncKey') || 'want-main';
 
 // Quick add functionality for add.html
-class QuickAdd {
+export class QuickAdd {
     constructor() {
         this.db = new WantDB();
         // Use our Cloudflare Worker for metadata (server-side scrape)
         this.META_ENDPOINT = 'https://want.fiorearcangelodesign.workers.dev';
-        this.firebaseEnabled = false; // Will be set to true if Firebase config is valid
         this.init();
     }
 
     async init() {
         await this.db.init();
-        this.checkFirebaseConfig();
         await this.processUrlParams();
     }
 
-    // Check if Firebase is properly configured
-    checkFirebaseConfig() {
-        try {
-            // Firebase is now properly configured with npm package
-            console.log('Firebase configured - enabling cloud sync');
-            this.firebaseEnabled = true;
-        } catch (error) {
-            console.error('Error checking Firebase config:', error);
-            this.firebaseEnabled = false;
-        }
-    }
+
 
     async processUrlParams() {
         const urlParams = new URLSearchParams(window.location.search);
@@ -63,17 +52,25 @@ class QuickAdd {
                 image: finalImage || ''
             };
 
-            await this.db.addItem(item);
-            
-            // Sync to Firebase if enabled
-            if (this.firebaseEnabled) {
-                try {
-                    await saveLink(item);
-                    console.log('Item synced to Firebase');
-                } catch (error) {
-                    console.error('Failed to sync to Firebase:', error);
-                    // Continue with local storage even if Firebase fails
+            // Save to Cloudflare Worker
+            try {
+                const r = await fetch(`${API}/items`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ listId: LIST_ID, item })
+                });
+                const result = await r.json();
+                if (result.ok) {
+                    console.log('Item saved to Worker with ID:', result.id);
+                    // Also save to local database for offline access
+                    await this.db.upsertItem({ ...item, id: result.id });
+                } else {
+                    throw new Error('Failed to save to Worker');
                 }
+            } catch (error) {
+                console.error('Failed to save to Worker:', error);
+                // Fallback to local storage only
+                await this.db.addItem(item);
             }
             
             // Redirect to main page with success message

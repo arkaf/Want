@@ -1,75 +1,135 @@
-# Cloudflare Worker Deployment Instructions
+# Cloudflare Worker Deployment Guide
 
-## **Current Issue**
-The worker at `https://want.fiorearcangelodesign.workers.dev` is returning 500 errors and CORS issues.
+## 1. Create KV Namespace
 
-## **Solution Steps**
+First, create a KV namespace for storing items:
 
-### **1. Deploy the Simplified Worker**
-
-1. **Go to Cloudflare Dashboard**: https://dash.cloudflare.com/
-2. **Navigate to Workers & Pages**
-3. **Click "Create application"**
-4. **Choose "Create Worker"**
-5. **Name it**: `want-meta-scraper-v2`
-6. **Replace the code** with the contents of `workers/meta-scraper-simple.js`
-7. **Click "Save and deploy"**
-
-### **2. Test the Worker**
-
-Test the worker directly:
 ```bash
-curl "https://your-worker-name.your-subdomain.workers.dev/meta?url=https://www.amazon.com/dp/B08N5WRWNW"
+# Create the KV namespace
+wrangler kv:namespace create "WANT_KV"
+
+# This will output something like:
+# Add the following to your wrangler.toml:
+# kv_namespaces = [
+#   { binding = "WANT_KV", id = "your-namespace-id" }
+# ]
 ```
 
-Expected response:
-```json
-{
-  "title": "Product Title",
-  "image": "https://image-url.jpg",
-  "price": "$99.99"
+## 2. Create wrangler.toml
+
+Create a `wrangler.toml` file in the `workers` directory:
+
+```toml
+name = "want-items"
+main = "items.js"
+compatibility_date = "2024-01-01"
+
+kv_namespaces = [
+  { binding = "WANT_KV", id = "your-namespace-id-from-step-1" }
+]
+
+[triggers]
+crons = []
+```
+
+## 3. Deploy the Worker
+
+```bash
+cd workers
+wrangler deploy
+```
+
+## 4. Update CORS (Optional)
+
+The Worker is configured with `Access-Control-Allow-Origin: *` for development. For production, you may want to restrict this to specific domains:
+
+```javascript
+// In workers/items.js, update the cors function:
+function cors(origin) {
+  const allowedOrigins = [
+    "https://arkaf.github.io",
+    "http://localhost:8030",
+    "http://localhost:8031", 
+    "http://localhost:8032",
+    "http://localhost:8033",
+    // Add your production domain here
+  ];
+  
+  const isAllowed = allowedOrigins.includes(origin) || origin === "null";
+  
+  return {
+    "Access-Control-Allow-Origin": isAllowed ? origin : "*",
+    "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Vary": "Origin"
+  };
 }
 ```
 
-### **3. Update the App**
+## 5. Test the Worker
 
-Once the worker is working, update the META_ENDPOINT in both files:
+Test the endpoints:
 
-**In `app.js`:**
-```javascript
-this.META_ENDPOINT = 'https://your-worker-name.your-subdomain.workers.dev';
+```bash
+# Get items
+curl "https://your-worker.your-subdomain.workers.dev/items?listId=want-main"
+
+# Add an item
+curl -X POST "https://your-worker.your-subdomain.workers.dev/items" \
+  -H "Content-Type: application/json" \
+  -d '{"listId":"want-main","item":{"url":"https://example.com","title":"Test Item","price":"$99.99","image":"https://example.com/image.jpg"}}'
+
+# Delete an item
+curl -X DELETE "https://your-worker.your-subdomain.workers.dev/items?id=item-id&listId=want-main"
 ```
 
-**In `add.js`:**
-```javascript
-this.META_ENDPOINT = 'https://your-worker-name.your-subdomain.workers.dev';
+Expected responses:
+
+**GET /items:**
+```json
+{
+  "items": [
+    {
+      "id": "uuid-here",
+      "url": "https://example.com",
+      "title": "Test Item",
+      "price": "$99.99",
+      "image": "https://example.com/image.jpg",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    }
+  ]
+}
 ```
 
-### **4. Alternative: Use Fallback Only**
-
-If you want to test without the worker, keep the current setting:
-```javascript
-this.META_ENDPOINT = ''; // Uses client-side fallback only
+**POST /items:**
+```json
+{
+  "ok": true,
+  "id": "uuid-here"
+}
 ```
 
-## **Current Status**
+**DELETE /items:**
+```json
+{
+  "ok": true
+}
+```
 
-- ✅ **App works with fallback** - No CORS errors
-- ✅ **Form submission works** - Items can be added
-- ✅ **Image display works** - Uses favicon fallback
-- ❌ **Worker needs redeployment** - CORS/500 errors
+## 6. Update Frontend
 
-## **Testing**
+Update the `API` constant in `app.js` and `add.js` to point to your deployed Worker:
 
-1. **Current setup**: App uses client-side fallback (favicon + domain name)
-2. **After worker deployment**: App will use server-side metadata extraction
-3. **Both work**: The app gracefully falls back when worker is unavailable
+```javascript
+const API = "https://your-worker.your-subdomain.workers.dev";
+```
 
-## **Worker Features**
+## Notes
 
-The simplified worker includes:
-- ✅ **CORS handling** - Proper preflight requests
-- ✅ **Error handling** - Better error messages
-- ✅ **URL validation** - Checks for valid protocols
-- ✅ **Metadata extraction** - Title, image, price
-- ✅ **Fallback logic** - Graceful degradation
+- The Worker stores items with a 1-year TTL (expiration)
+- Each item is stored as an individual KV entry with key format: `item:listId:id`
+- The `listId` parameter allows for multiple lists (defaults to "want-main")
+- Items are automatically sorted by creation date (newest first)
+- CORS is configured for development with `*` origin
+- The Worker handles preflight OPTIONS requests automatically
+- KV operations are atomic and efficient for individual item operations

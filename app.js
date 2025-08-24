@@ -1,22 +1,72 @@
-// Import Firebase functionality
-import { saveLink, loadLinks, deleteLink } from './src/firebase.js';
+// Firebase functionality will be accessed via window.db
+
+// Constants & utils
+const META_ENDPOINT = "https://want.fiorearcangelodesign.workers.dev/meta"; // our Cloudflare Worker
+const API = "https://want.fiorearcangelodesign.workers.dev"; // Worker API
+const PASTE_DEBOUNCE_MS = 120;
+
+function domainFrom(url) {
+    try { return new URL(url).hostname.replace(/^www\./,''); } catch { return ""; }
+}
+
+function isProbablyUrl(s) {
+    try { const u = new URL(s); return !!u.protocol && !!u.hostname; } catch { return false; }
+}
+
+// Cloudflare Worker API functions
+const LIST_ID = localStorage.getItem('want.syncKey') || 'want-main';
+
+async function loadItems() {
+    const r = await fetch(`${API}/items?listId=${encodeURIComponent(LIST_ID)}`);
+    const { items } = await r.json();
+    return items || [];
+}
+
+async function saveItemRemote(item) {
+    const r = await fetch(`${API}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listId: LIST_ID, item })
+    });
+    const result = await r.json();
+    return result;
+}
+
+async function deleteItemRemote(id) {
+    const r = await fetch(`${API}/items?id=${encodeURIComponent(id)}&listId=${encodeURIComponent(LIST_ID)}`, {
+        method: "DELETE"
+    });
+    const result = await r.json();
+    return result;
+}
 
 // Main application logic
-class WantApp {
+export class WantApp {
     constructor() {
         this.db = new WantDB();
         // Use our Cloudflare Worker for metadata (server-side scrape)
         this.META_ENDPOINT = 'https://want.fiorearcangelodesign.workers.dev';
         this.selectedStore = null; // null = All
-        this.firebaseEnabled = false; // Will be set to true if Firebase config is valid
-        this.init();
+        this.pasteTimer = null;
+        
+        // Wait for DOM to be ready before initializing
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                this.init();
+            });
+        } else {
+            this.init();
+        }
     }
 
     async init() {
-        await this.db.init();
+        // Wire UI immediately when DOM is ready
+        this.wireUI();
+        this.enableGlobalPaste();
+        this.hydrateFromQueryParams();
         
-        // Check if Firebase is properly configured
-        this.checkFirebaseConfig();
+        // Initialize database
+        await this.db.init();
         
         // Guard duplicate IDs forever
         ['openAddBtn','addItemBtn','urlInput','addForm'].forEach(id => {
@@ -30,8 +80,8 @@ class WantApp {
             if (s !== null && s !== "") this.selectedStore = s;
         } catch {}
         
-        this.bindEvents();
-        await this.renderGridFiltered();
+        // Load items from Cloudflare Worker
+        await this.loadItemsFromWorker();
         
         // Check for success message from add.html
         const urlParams = new URLSearchParams(window.location.search);
@@ -42,16 +92,33 @@ class WantApp {
         }
     }
 
-    bindEvents() {
-        // Open modal (header button)
-        document.getElementById('openAddBtn').addEventListener('click', () => {
-            this.showModal();
-        });
+    wireUI() {
+        const openAddBtn = document.getElementById('openAddBtn');        // "+ Add"
+        const headerSettingsBtn = document.getElementById('settingsBtn'); // gear icon
+
+        // Always mark as non-submit buttons to avoid form submissions
+        openAddBtn?.setAttribute('type', 'button');
+        headerSettingsBtn?.setAttribute('type', 'button');
+
+        // Log helpful errors if buttons are not found
+        if (!openAddBtn) console.warn('openAddBtn not found');
+        if (!headerSettingsBtn) console.warn('settingsBtn not found');
+
+        openAddBtn?.removeEventListener('click', () => this.showModal());
+        openAddBtn?.addEventListener('click', () => this.showModal(), { passive: true });
+
+        headerSettingsBtn?.removeEventListener('click', () => this.showSettingsModal());
+        headerSettingsBtn?.addEventListener('click', () => this.showSettingsModal(), { passive: true });
 
         // Modal events
-        document.getElementById('closeModal').addEventListener('click', () => {
-            this.hideModal();
-        });
+        const closeModal = document.getElementById('closeModal');
+        if (closeModal) {
+            closeModal.addEventListener('click', () => {
+                this.hideModal();
+            });
+        } else {
+            console.error('closeModal not found');
+        }
 
         // Elements
         const modal = document.getElementById('addModal');
@@ -122,9 +189,14 @@ class WantApp {
         });
 
         // Settings modal
-        document.getElementById('settingsBtn').addEventListener('click', () => {
-            this.showSettingsModal();
-        });
+        const settingsBtn = document.getElementById('settingsBtn');
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', () => {
+                this.showSettingsModal();
+            });
+        } else {
+            console.error('settingsBtn not found');
+        }
 
         document.getElementById('closeSettingsModal').addEventListener('click', () => {
             this.hideSettingsModal();
@@ -156,47 +228,57 @@ class WantApp {
         // Scroll shadow effect
         this.setupScrollShadow();
 
-        // 3) Global paste listener (preferred, works with browser paste)
-        document.addEventListener("paste", async (e) => {
-            const a = document.activeElement;
-            const editing = a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable);
-            if (editing) return;
+    }
 
-            const text = (e.clipboardData || window.clipboardData)?.getData("text")?.trim();
+    enableGlobalPaste() {
+        window.addEventListener('paste', (e) => {
+            // If user is typing in an input/textarea or a modal is open, do NOT auto-add
+            const active = document.activeElement;
+            const typing = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
+            const modalOpen = !!document.querySelector('.modal[data-open="true"]');
+            const dt = e.clipboardData || window.clipboardData;
+            const text = dt?.getData('text')?.trim() || '';
+
             if (!text) return;
-            const url = this.normalizeUrl(text);
-            if (!this.isProbablyUrl(url)) return;
+
+            if (typing || modalOpen) {
+                // Existing behavior: let the paste go to the input (or the modal's URL field handler will pick it up)
+                return;
+            }
+
+            if (!isProbablyUrl(text)) return;
 
             e.preventDefault();
-            await this.addUrlToWant(url);
+
+            clearTimeout(this.pasteTimer);
+            this.pasteTimer = setTimeout(() => {
+                this.addItemDirectly(text);
+            }, PASTE_DEBOUNCE_MS);
         });
+    }
 
-        // 4) Bonus: Cmd/Ctrl+V fallback using Clipboard API (for cases where 'paste' doesn't fire)
-        document.addEventListener("keydown", async (e) => {
-            const isPaste = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v";
-            if (!isPaste) return;
+    hydrateFromQueryParams() {
+        const u = new URLSearchParams(location.search).get('url');
+        if (u) {
+            const url = decodeURIComponent(u.trim());
+            if (this.isProbablyUrl(url)) this.handleUrlPaste(url);
+        }
+    }
 
-            const a = document.activeElement;
-            const editing = a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable);
-            if (editing) return;
-
-            if (navigator.clipboard?.readText) {
-                try {
-                    const text = (await navigator.clipboard.readText())?.trim();
-                    if (text) {
-                        const url = this.normalizeUrl(text);
-                        if (this.isProbablyUrl(url)) {
-                            await this.addUrlToWant(url);
-                            e.preventDefault();
-                        }
-                    }
-                } catch { /* ignore */ }
-            }
-        });
+    async handleUrlPaste(url) {
+        // Open the Add modal, pre-fill the URL input, start auto-extraction
+        this.showModal();
+        const urlInput = document.getElementById('urlInput');
+        if (urlInput) {
+            urlInput.value = url;
+            urlInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
     }
 
     showModal() {
         const modal = document.getElementById('addModal');
+        modal.removeAttribute('hidden');
+        modal.setAttribute('data-open', 'true');
         modal.style.display = 'flex';
         
         // Trigger animation after display is set
@@ -220,6 +302,8 @@ class WantApp {
         // Wait for animation to complete
         setTimeout(() => {
             modal.style.display = 'none';
+            modal.setAttribute('hidden', 'true');
+            modal.removeAttribute('data-open');
             document.body.style.overflow = '';
         }, 300);
         
@@ -232,6 +316,8 @@ class WantApp {
 
     showSettingsModal() {
         const modal = document.getElementById('settingsModal');
+        modal.removeAttribute('hidden');
+        modal.setAttribute('data-open', 'true');
         modal.style.display = 'flex';
         
         // Trigger animation after display is set
@@ -250,6 +336,8 @@ class WantApp {
         // Wait for animation to complete before hiding
         setTimeout(() => {
             modal.style.display = 'none';
+            modal.setAttribute('hidden', 'true');
+            modal.removeAttribute('data-open');
         }, 300);
         
         // Restore body scroll
@@ -351,18 +439,7 @@ class WantApp {
     // single add function used by ALL entry points
     async addUrlToWant(url) {
         const item = await this.buildItemFromUrl(url);
-        const id = await this.upsertItem(item);      // upsert by URL
-        
-        // Sync to Firebase if enabled
-        if (this.firebaseEnabled) {
-            try {
-                await saveLink(item);
-                console.log('Item synced to Firebase');
-            } catch (error) {
-                console.error('Failed to sync to Firebase:', error);
-                // Continue with local storage even if Firebase fails
-            }
-        }
+        const id = await this.saveItem(item);        // save to Worker + local
         
         await this.renderGridFiltered();             // refresh UI with filtering
         this.hideModal?.();                          // if modal was open
@@ -370,51 +447,32 @@ class WantApp {
         return id;
     }
 
-    // Check if Firebase is properly configured
-    checkFirebaseConfig() {
+    // Load items from Cloudflare Worker
+    async loadItemsFromWorker() {
         try {
-            // Firebase is now properly configured with npm package
-            console.log('Firebase configured - enabling cloud sync');
-            this.firebaseEnabled = true;
-            // Sync from Firebase on startup
-            this.syncFromFirebase();
+            console.log('Loading items from Cloudflare Worker...');
+            const items = await loadItems();
+            
+            // Update local items array
+            this.items = items;
+            
+            // Also cache in IndexedDB for offline access
+            for (const item of items) {
+                await this.db.upsertItem(item);
+            }
+            
+            console.log(`Loaded ${items.length} items from Worker`);
+            
+            // Render the grid
+            await this.renderGridFiltered();
         } catch (error) {
-            console.error('Error checking Firebase config:', error);
-            this.firebaseEnabled = false;
+            console.error('Error loading items from Worker:', error);
+            // Fallback to local IndexedDB
+            await this.renderGridFiltered();
         }
     }
 
-    // Sync data from Firebase to local storage
-    async syncFromFirebase() {
-        if (!this.firebaseEnabled) return;
-        
-        try {
-            console.log('Syncing from Firebase...');
-            const firebaseItems = await loadLinks();
-            
-            // Get local items for comparison
-            const localItems = await this.db.getAllItems();
-            
-            // Merge Firebase items with local items (Firebase takes precedence)
-            for (const firebaseItem of firebaseItems) {
-                const existingLocal = localItems.find(item => item.url === firebaseItem.url);
-                if (existingLocal) {
-                    // Update existing item with Firebase data
-                    await this.db.updateItem(existingLocal.id, firebaseItem);
-                } else {
-                    // Add new item from Firebase
-                    await this.db.addItem(firebaseItem);
-                }
-            }
-            
-            console.log(`Synced ${firebaseItems.length} items from Firebase`);
-            
-            // Refresh the UI
-            await this.renderGridFiltered();
-        } catch (error) {
-            console.error('Error syncing from Firebase:', error);
-        }
-    }
+
 
     // Returns eTLD+1 in most cases (simple heuristic, handles common multi-part TLDs)
     getMainDomain(urlStr) {
@@ -566,7 +624,7 @@ class WantApp {
         const fallback = this.getDefaultImage(domain);
 
         return `
-            <a class="card" href="${this.escapeHtml(item.url)}" target="_blank" rel="noopener">
+            <a class="card" href="${this.escapeHtml(item.url)}" target="_blank" rel="noopener" data-item-id="${item.id}">
                 <div class="img-wrap">
                     <img 
                         src="${this.escapeHtml(proxied || fallback)}" 
@@ -591,6 +649,49 @@ class WantApp {
                 </div>
             </a>
         `;
+    }
+
+    // Render a single item card (for optimistic UI)
+    renderItemCard(item) {
+        const grid = document.getElementById('itemsGrid');
+        const emptyState = document.getElementById('emptyState');
+        
+        // Hide empty state if we have items
+        emptyState.style.display = 'none';
+        
+        // Create the card HTML
+        const cardHtml = this.createItemCard(item);
+        
+        // Add optimistic styling if needed
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = cardHtml;
+        const card = tempDiv.firstElementChild;
+        
+        if (item._optimistic) {
+            card.classList.add('optimistic');
+            // Add shimmer effect for loading state
+            card.style.opacity = '0.7';
+        }
+        
+        // Insert at the beginning of the grid
+        grid.insertBefore(card, grid.firstChild);
+        
+        // Bind more menu events for the new card
+        const moreBtn = card.querySelector('.card-more');
+        if (moreBtn) {
+            moreBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Use the existing more menu logic
+                const moreMenu = document.getElementById('moreMenu');
+                const moreBackdrop = document.getElementById('moreBackdrop');
+                if (moreMenu && moreBackdrop) {
+                    moreMenu.hidden = false;
+                    moreBackdrop.hidden = false;
+                    moreMenu.dataset.itemId = item.id;
+                }
+            });
+        }
     }
 
     getDefaultImage(domain) {
@@ -627,24 +728,29 @@ class WantApp {
     async deleteItem(id) {
         if (confirm('Are you sure you want to delete this item?')) {
             try {
-                await this.db.deleteItem(id);
-                
-                // Delete from Firebase if enabled
-                if (this.firebaseEnabled) {
-                    try {
-                        await deleteLink(id);
-                        console.log('Item deleted from Firebase');
-                    } catch (error) {
-                        console.error('Failed to delete from Firebase:', error);
-                        // Continue even if Firebase deletion fails
-                    }
+                // Delete from Cloudflare Worker first
+                const result = await deleteItemRemote(id);
+                if (result.ok) {
+                    console.log('Item deleted from Worker');
+                    
+                    // Also delete from local database
+                    await this.db.deleteItem(id);
+                    
+                    // Update local items array
+                    this.items = this.items.filter(item => item.id !== id);
+                    
+                    await this.renderGridFiltered();
+                    this.showToast('Item deleted');
+                } else {
+                    throw new Error('Failed to delete from Worker');
                 }
-                
-                await this.renderGridFiltered();
-                this.showToast('Item deleted');
             } catch (error) {
                 console.error('Error deleting item:', error);
-                this.showToast('Error deleting item', 'error');
+                // Fallback to local deletion only
+                await this.db.deleteItem(id);
+                this.items = this.items.filter(item => item.id !== id);
+                await this.renderGridFiltered();
+                this.showToast('Item deleted (local only)');
             }
         }
     }
@@ -1118,6 +1224,132 @@ class WantApp {
             }
             last = y;
         }, { passive: true });
+    }
+
+    // Direct add pipeline (optimistic UI)
+    
+    // Show an optimistic placeholder card
+    addOptimisticCard(url) {
+        const id = `temp_${Date.now()}`;
+        const card = {
+            id,
+            title: "Loading…",
+            url,
+            site: domainFrom(url),
+            price: "",
+            image: "",  // blank; card shows skeleton
+            _optimistic: true,
+            createdAt: Date.now(),
+        };
+        this.renderItemCard(card); // existing renderer should handle "loading" skeleton by checking _optimistic or empty image
+        return id;
+    }
+
+    // Fetch meta from Worker
+    async fetchMeta(url) {
+        const r = await fetch(`${META_ENDPOINT}?url=${encodeURIComponent(url)}`, { mode: 'cors' });
+        if (!r.ok) throw new Error(`meta ${r.status}`);
+        const data = await r.json();
+        return {
+            title: data.title || domainFrom(url),
+            image: data.image || "",
+            price: data.price || "",
+        };
+    }
+
+    // Save item to database and Worker
+    async saveItem(obj) {
+        try {
+            // Save to Cloudflare Worker first
+            const result = await saveItemRemote(obj);
+            if (result.ok) {
+                console.log('Item saved to Worker with ID:', result.id);
+                
+                // Update the object with the returned ID
+                obj.id = result.id;
+                
+                // Also save to local database for offline access
+                await this.db.upsertItem(obj);
+                
+                return result.id;
+            } else {
+                throw new Error('Failed to save to Worker');
+            }
+        } catch (error) {
+            console.error('Failed to save to Worker:', error);
+            // Fallback to local storage only
+            const item = await this.db.addItem(obj);
+            return item.id;
+        }
+    }
+
+    // Replace placeholder with real card or remove on error
+    reconcileCard(tempId, finalObj, err) {
+        if (err) {
+            this.removeItemCard(tempId);  // delete skeleton
+            this.showToast("Couldn't add link. Try again."); // small non-blocking toast
+            return;
+        }
+        // Replace existing skeleton in-place if your renderer supports it,
+        // otherwise remove and re-render the final card.
+        if (!this.updateItemCard(tempId, finalObj)) {
+            this.removeItemCard(tempId);
+            this.renderItemCard(finalObj);
+        }
+    }
+
+    // Main direct-add flow
+    async addItemDirectly(url) {
+        const tempId = this.addOptimisticCard(url);
+        try {
+            const meta = await this.fetchMeta(url);
+            const finalObj = {
+                url,
+                title: meta.title,
+                image: meta.image,
+                price: meta.price,
+                site: domainFrom(url),
+            };
+            const newId = await this.saveItem(finalObj);
+            this.reconcileCard(tempId, { id: newId, ...finalObj });
+        } catch (e) {
+            console.error("addItemDirectly failed", e);
+            this.reconcileCard(tempId, null, e);
+        }
+    }
+
+    // Helper methods for card manipulation
+    removeItemCard(id) {
+        const card = document.querySelector(`[data-item-id="${id}"]`);
+        if (card) {
+            card.remove();
+        }
+    }
+
+    updateItemCard(id, obj) {
+        const card = document.querySelector(`[data-item-id="${id}"]`);
+        if (card) {
+            // Update the card content in-place
+            const titleEl = card.querySelector('.card-title');
+            const priceEl = card.querySelector('.card-price');
+            const siteEl = card.querySelector('.card-site');
+            const imgEl = card.querySelector('.card-image');
+            
+            if (titleEl) titleEl.textContent = obj.title || '';
+            if (priceEl) priceEl.textContent = obj.price || '';
+            if (siteEl) siteEl.textContent = obj.site || '';
+            if (imgEl && obj.image) {
+                imgEl.src = this.proxiedImage(obj.image);
+                imgEl.style.display = 'block';
+            }
+            
+            // Remove optimistic styling
+            card.classList.remove('optimistic');
+            card.dataset.itemId = obj.id;
+            
+            return true; // Successfully updated
+        }
+        return false; // Card not found, need to re-render
     }
 }
 

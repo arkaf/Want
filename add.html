@@ -7,16 +7,17 @@
     <meta name="description" content="Quick add item to your Want list">
     
     <!-- Web App Manifest -->
-    <link rel="manifest" href="/Want/manifest.webmanifest">
+    <link rel="manifest" href="/manifest.webmanifest">
     
     <!-- iOS Home Screen icon -->
-    <link rel="apple-touch-icon" href="/Want/assets/icon-180.png">
+    <link rel="apple-touch-icon" href="/assets/icon-180.png">
     <!-- (optional extra sizes) -->
-    <link rel="apple-touch-icon" sizes="192x192" href="/Want/assets/icon-192.png">
-    <link rel="apple-touch-icon" sizes="512x512" href="/Want/assets/icon-512.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="/assets/icon-192.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="/assets/icon-512.png">
     
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="Want">
+    <meta name="apple-mobile-web-app-title" content="Add to Want">
     <meta name="theme-color" content="#ffffff">
     
     <link rel="stylesheet" href="styles.css">
@@ -36,8 +37,18 @@
         </div>
     </div>
 
+    
+
     <script src="vendor/idb.min.js"></script>
     <script src="db.js"></script>
-    <script type="module" src="add.js"></script>
+    <script type="module">
+        // Import and initialize the quick add app
+        import { QuickAdd } from './add.js';
+        
+        // Create app instance when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            window.quickAdd = new QuickAdd();
+        });
+    </script>
 </body>
 </html>
