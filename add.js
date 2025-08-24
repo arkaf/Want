@@ -1,15 +1,32 @@
+// Import Firebase functionality
+import { saveLink } from './src/firebase.js';
+
 // Quick add functionality for add.html
 class QuickAdd {
     constructor() {
         this.db = new WantDB();
         // Use our Cloudflare Worker for metadata (server-side scrape)
         this.META_ENDPOINT = 'https://want.fiorearcangelodesign.workers.dev';
+        this.firebaseEnabled = false; // Will be set to true if Firebase config is valid
         this.init();
     }
 
     async init() {
         await this.db.init();
+        this.checkFirebaseConfig();
         await this.processUrlParams();
+    }
+
+    // Check if Firebase is properly configured
+    checkFirebaseConfig() {
+        try {
+            // Firebase is now properly configured with npm package
+            console.log('Firebase configured - enabling cloud sync');
+            this.firebaseEnabled = true;
+        } catch (error) {
+            console.error('Error checking Firebase config:', error);
+            this.firebaseEnabled = false;
+        }
     }
 
     async processUrlParams() {
@@ -47,6 +64,17 @@ class QuickAdd {
             };
 
             await this.db.addItem(item);
+            
+            // Sync to Firebase if enabled
+            if (this.firebaseEnabled) {
+                try {
+                    await saveLink(item);
+                    console.log('Item synced to Firebase');
+                } catch (error) {
+                    console.error('Failed to sync to Firebase:', error);
+                    // Continue with local storage even if Firebase fails
+                }
+            }
             
             // Redirect to main page with success message
             window.location.href = 'index.html?added=true';

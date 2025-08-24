@@ -127,8 +127,8 @@ h1 {
     padding: 1rem;
     max-width: 1200px;
     margin: 0 auto;
-    /* Make sure content isn't hidden behind the extended blurred bottom */
-    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0) + 80px);
+    /* Make sure content isn't hidden behind the bottom blur */
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0) + 16px);
     /* Add subtle blur to content area for seamless blending */
     -webkit-backdrop-filter: blur(1px);
     backdrop-filter: blur(1px);
@@ -138,8 +138,9 @@ h1 {
 .items-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    padding: 16px;
+    gap: 16px;
+    padding-top: 16px;
+    padding-bottom: 16px;
 }
 
 @media (min-width: 768px) {
@@ -213,6 +214,12 @@ h1 {
     font-weight: 600;
     line-height: 1.25;
     margin: 0 0 6px;
+    /* Truncate after 3 lines */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .card-price {
@@ -745,7 +752,7 @@ h1 {
     right: 0;
     bottom: 0;
     z-index: 40;
-    height: calc(64px + env(safe-area-inset-bottom, 0) + 80px);
+    height: 24px;
     pointer-events: none;
 
     /* Blur effect */
@@ -770,7 +777,7 @@ h1 {
 .store-tags {
     display: flex;
     gap: 8px;
-    padding: 8px 4px 12px;
+    padding: 0px 4px 12px;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;

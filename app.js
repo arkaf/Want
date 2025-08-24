@@ -1,3 +1,6 @@
+// Import Firebase functionality
+import { saveLink, loadLinks, deleteLink } from './src/firebase.js';
+
 // Main application logic
 class WantApp {
     constructor() {
@@ -5,11 +8,15 @@ class WantApp {
         // Use our Cloudflare Worker for metadata (server-side scrape)
         this.META_ENDPOINT = 'https://want.fiorearcangelodesign.workers.dev';
         this.selectedStore = null; // null = All
+        this.firebaseEnabled = false; // Will be set to true if Firebase config is valid
         this.init();
     }
 
     async init() {
         await this.db.init();
+        
+        // Check if Firebase is properly configured
+        this.checkFirebaseConfig();
         
         // Guard duplicate IDs forever
         ['openAddBtn','addItemBtn','urlInput','addForm'].forEach(id => {
@@ -345,10 +352,68 @@ class WantApp {
     async addUrlToWant(url) {
         const item = await this.buildItemFromUrl(url);
         const id = await this.upsertItem(item);      // upsert by URL
+        
+        // Sync to Firebase if enabled
+        if (this.firebaseEnabled) {
+            try {
+                await saveLink(item);
+                console.log('Item synced to Firebase');
+            } catch (error) {
+                console.error('Failed to sync to Firebase:', error);
+                // Continue with local storage even if Firebase fails
+            }
+        }
+        
         await this.renderGridFiltered();             // refresh UI with filtering
         this.hideModal?.();                          // if modal was open
         this.showToast?.('Saved to Want');           // optional
         return id;
+    }
+
+    // Check if Firebase is properly configured
+    checkFirebaseConfig() {
+        try {
+            // Firebase is now properly configured with npm package
+            console.log('Firebase configured - enabling cloud sync');
+            this.firebaseEnabled = true;
+            // Sync from Firebase on startup
+            this.syncFromFirebase();
+        } catch (error) {
+            console.error('Error checking Firebase config:', error);
+            this.firebaseEnabled = false;
+        }
+    }
+
+    // Sync data from Firebase to local storage
+    async syncFromFirebase() {
+        if (!this.firebaseEnabled) return;
+        
+        try {
+            console.log('Syncing from Firebase...');
+            const firebaseItems = await loadLinks();
+            
+            // Get local items for comparison
+            const localItems = await this.db.getAllItems();
+            
+            // Merge Firebase items with local items (Firebase takes precedence)
+            for (const firebaseItem of firebaseItems) {
+                const existingLocal = localItems.find(item => item.url === firebaseItem.url);
+                if (existingLocal) {
+                    // Update existing item with Firebase data
+                    await this.db.updateItem(existingLocal.id, firebaseItem);
+                } else {
+                    // Add new item from Firebase
+                    await this.db.addItem(firebaseItem);
+                }
+            }
+            
+            console.log(`Synced ${firebaseItems.length} items from Firebase`);
+            
+            // Refresh the UI
+            await this.renderGridFiltered();
+        } catch (error) {
+            console.error('Error syncing from Firebase:', error);
+        }
     }
 
     // Returns eTLD+1 in most cases (simple heuristic, handles common multi-part TLDs)
@@ -563,6 +628,18 @@ class WantApp {
         if (confirm('Are you sure you want to delete this item?')) {
             try {
                 await this.db.deleteItem(id);
+                
+                // Delete from Firebase if enabled
+                if (this.firebaseEnabled) {
+                    try {
+                        await deleteLink(id);
+                        console.log('Item deleted from Firebase');
+                    } catch (error) {
+                        console.error('Failed to delete from Firebase:', error);
+                        // Continue even if Firebase deletion fails
+                    }
+                }
+                
                 await this.renderGridFiltered();
                 this.showToast('Item deleted');
             } catch (error) {
