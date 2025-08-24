@@ -4,6 +4,7 @@ class WantApp {
         this.db = new WantDB();
         // Use our Cloudflare Worker for metadata (server-side scrape)
         this.META_ENDPOINT = 'https://want.fiorearcangelodesign.workers.dev';
+        this.selectedStore = null; // null = All
         this.init();
     }
 
@@ -16,8 +17,14 @@ class WantApp {
             if (els.length > 1) console.warn('Duplicate id:', id, els);
         });
         
+        // Restore selection on load (optional)
+        try {
+            const s = localStorage.getItem('want.selectedStore');
+            if (s !== null && s !== "") this.selectedStore = s;
+        } catch {}
+        
         this.bindEvents();
-        await this.loadItems();
+        await this.renderGridFiltered();
         
         // Check for success message from add.html
         const urlParams = new URLSearchParams(window.location.search);
@@ -107,7 +114,7 @@ class WantApp {
 
         // Settings backdrop click
         document.getElementById('settingsModal').addEventListener('click', (e) => {
-            if (e.target.id === 'settingsModal') {
+            if (e.target.id === 'settingsModal' || e.target.id === 'settingsModalBackdrop') {
                 this.hideSettingsModal();
             }
         });
@@ -127,6 +134,9 @@ class WantApp {
 
         // More menu controller
         this.setupMoreMenu();
+
+        // Scroll shadow effect
+        this.setupScrollShadow();
 
         // 3) Global paste listener (preferred, works with browser paste)
         document.addEventListener("paste", async (e) => {
@@ -203,11 +213,29 @@ class WantApp {
     }
 
     showSettingsModal() {
-        document.getElementById('settingsModal').style.display = 'flex';
+        const modal = document.getElementById('settingsModal');
+        modal.style.display = 'flex';
+        
+        // Trigger animation after display is set
+        setTimeout(() => {
+            modal.classList.add('show');
+        }, 10);
+        
+        // Prevent body scroll
+        document.body.style.overflow = 'hidden';
     }
 
     hideSettingsModal() {
-        document.getElementById('settingsModal').style.display = 'none';
+        const modal = document.getElementById('settingsModal');
+        modal.classList.remove('show');
+        
+        // Wait for animation to complete before hiding
+        setTimeout(() => {
+            modal.style.display = 'none';
+        }, 300);
+        
+        // Restore body scroll
+        document.body.style.overflow = '';
     }
 
 
@@ -217,6 +245,7 @@ class WantApp {
     async loadItems() {
         try {
             const items = await this.db.getAllItems();
+            this.items = items; // Store items in instance
             this.renderItems(items);
         } catch (error) {
             console.error('Error loading items:', error);
@@ -305,7 +334,7 @@ class WantApp {
     async addUrlToWant(url) {
         const item = await this.buildItemFromUrl(url);
         const id = await this.upsertItem(item);      // upsert by URL
-        await this.loadItems();                      // refresh UI
+        await this.renderGridFiltered();             // refresh UI with filtering
         this.hideModal?.();                          // if modal was open
         this.showToast?.('Saved to Want');           // optional
         return id;
@@ -335,6 +364,71 @@ class WantApp {
         return d || (function(){ try { return new URL(urlStr).hostname.replace(/^www\./i,""); } catch { return ""; }})();
     }
 
+    // Store tags functionality
+    getDomainCounts(items) {
+        const counts = new Map();
+        for (const it of items) {
+            const d = it.domain || this.getMainDomain(it.url);
+            if (!d) continue;
+            counts.set(d, (counts.get(d) || 0) + 1);
+        }
+        return counts;
+    }
+
+    renderStoreTags(items) {
+        const el = document.getElementById('storeTags');
+        if (!el) return;
+
+        const counts = this.getDomainCounts(items);
+        const entries = Array.from(counts.entries())
+            .sort((a, b) => a[0].localeCompare(b[0])); // sort alphabetically
+
+        const chips = [];
+        chips.push(`
+            <button class="tag-chip ${this.selectedStore ? "" : "active"}" data-store="">
+                All<span class="tag-count">${items.length}</span>
+            </button>
+        `);
+        
+        for (const [domain, count] of entries) {
+            chips.push(`
+                <button class="tag-chip ${this.selectedStore === domain ? "active" : ""}" data-store="${domain}">
+                    ${domain}<span class="tag-count">${count}</span>
+                </button>
+            `);
+        }
+        
+        el.innerHTML = chips.join("");
+
+        // Events (delegate)
+        el.querySelectorAll('.tag-chip').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const store = btn.dataset.store || null;
+                this.selectedStore = store;
+                // persist (optional)
+                try { 
+                    localStorage.setItem('want.selectedStore', store ?? ""); 
+                } catch {}
+                this.renderStoreTags(items); // re-highlight
+                this.renderGridFiltered();   // apply filter
+            });
+        });
+    }
+
+    async renderGridFiltered() {
+        const items = await this.db.getAllItems();
+        this.items = items; // Store items in instance
+        const filtered = this.selectedStore
+            ? items.filter(it => (it.domain || this.getMainDomain(it.url)) === this.selectedStore)
+            : items;
+
+        // Reuse existing renderItems but pass filtered
+        this.renderItems(filtered);
+
+        // Always (re)build tags from the full list so counts are accurate
+        this.renderStoreTags(items);
+    }
+
     // Escape HTML to prevent XSS
     escapeHtml(text) {
         const div = document.createElement('div');
@@ -344,7 +438,15 @@ class WantApp {
 
     // Swipe to close functionality for mobile
     setupSwipeToClose() {
-        const modal = document.getElementById('addModal');
+        // Setup swipe-to-close for Add modal
+        this.setupModalSwipeToClose('addModal', () => this.hideModal());
+        
+        // Setup swipe-to-close for Settings modal
+        this.setupModalSwipeToClose('settingsModal', () => this.hideSettingsModal());
+    }
+
+    setupModalSwipeToClose(modalId, closeCallback) {
+        const modal = document.getElementById(modalId);
         let startY = 0;
         let currentY = 0;
         let isDragging = false;
@@ -374,7 +476,7 @@ class WantApp {
             
             if (deltaY > 100) {
                 // Swipe down threshold reached, close modal
-                this.hideModal();
+                closeCallback();
             } else {
                 // Reset position
                 modalContent.style.transform = '';
@@ -460,7 +562,7 @@ class WantApp {
         if (confirm('Are you sure you want to delete this item?')) {
             try {
                 await this.db.deleteItem(id);
-                await this.loadItems();
+                await this.renderGridFiltered();
                 this.showToast('Item deleted');
             } catch (error) {
                 console.error('Error deleting item:', error);
@@ -911,7 +1013,7 @@ class WantApp {
                     if (ok) {
                         try {
                             await this.db.deleteItem(item.id);
-                            await this.loadItems();
+                            await this.renderGridFiltered();
                             this.showToast('Item deleted');
                         } catch (error) {
                             console.error('Failed to delete item:', error);
@@ -926,6 +1028,18 @@ class WantApp {
                 closeMoreMenu();
             }
         });
+    }
+
+    setupScrollShadow() {
+        const topbar = document.getElementById('topbar');
+        let last = 0;
+        document.addEventListener('scroll', () => {
+            const y = window.scrollY || 0;
+            if ((y > 2) !== (last > 2)) {
+                topbar.style.boxShadow = y > 2 ? '0 2px 12px rgba(0,0,0,0.06)' : 'none';
+            }
+            last = y;
+        }, { passive: true });
     }
 }
 

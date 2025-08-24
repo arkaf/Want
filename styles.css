@@ -12,17 +12,36 @@ body {
     line-height: 1.6;
 }
 
-/* Header */
-header {
-    background: white;
-    padding: 1rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+/* ---- Top bar: frosted white, sticky, no divider ---- */
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(255,255,255,0.7);
+    -webkit-backdrop-filter: saturate(180%) blur(16px);
+    backdrop-filter: saturate(180%) blur(16px);
+    /* remove any border-bottom/divider */
+    border-bottom: 0 !important;
+    box-shadow: none;
+}
+
+.topbar-inner {
+    padding: 14px 16px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    position: sticky;
-    top: 0;
-    z-index: 100;
+}
+
+/* Soft white fade under the topbar */
+.topbar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -12px;
+    height: 24px;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.9), rgba(255,255,255,0));
+    pointer-events: none;
 }
 
 .header-left {
@@ -32,29 +51,38 @@ header {
 }
 
 .logo {
-    height: 32px;
+    height: 24px;
     width: auto;
     display: block;
 }
 
 .header-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 24px;
     align-items: center;
 }
 
 .settings-btn {
     background: none;
-    border: 1px solid #e5e5e5;
-    padding: 0.5rem;
-    border-radius: 8px;
-    font-size: 1rem;
+    border: none;
+    padding: 0;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: opacity 0.2s;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #000;
 }
 
 .settings-btn:hover {
-    background: #f5f5f5;
+    opacity: 0.7;
+}
+
+.settings-btn svg {
+    width: 24px;
+    height: 24px;
 }
 
 h1 {
@@ -64,26 +92,35 @@ h1 {
 }
 
 .add-btn {
-    background: #000000;
-    color: white;
+    background: none;
+    color: #000;
     border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 500;
+    padding: 0;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: opacity 0.2s;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .add-btn:hover {
-    background: #333333;
+    opacity: 0.7;
+}
+
+.add-btn svg {
+    width: 24px;
+    height: 24px;
 }
 
 /* Main content */
-main {
+.main {
     padding: 1rem;
     max-width: 1200px;
     margin: 0 auto;
+    /* Make sure content isn't hidden behind the blurred bottom */
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0) + 24px);
 }
 
 /* Grid */
@@ -683,5 +720,77 @@ main {
 
 /* Hidden utility class */
 .hidden {
+    display: none !important;
+}
+
+/* ---- Bottom blur veil ---- */
+.bottom-blur {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    height: calc(64px + env(safe-area-inset-bottom, 0) + 48px);
+    pointer-events: none;
+
+    /* Blur effect */
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+
+    /* Smooth white fade upwards */
+    background: linear-gradient(
+        to top,
+        rgba(255,255,255,1) 0%,
+        rgba(255,255,255,0.9) 30%,
+        rgba(255,255,255,0.6) 60%,
+        rgba(255,255,255,0) 100%
+    );
+}
+
+/* Store Tags */
+.store-tags {
+    display: flex;
+    gap: 8px;
+    padding: 8px 4px 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+
+.store-tags::-webkit-scrollbar {
+    display: none;
+}
+
+.tag-chip {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    color: #111;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tag-chip:hover {
+    background: #f8fafc;
+}
+
+.tag-chip.active {
+    background: #000;
+    color: #fff;
+    border-color: #000;
+}
+
+.tag-count {
+    opacity: 0.6;
+    margin-left: 6px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Remove any legacy dividers */
+.header-divider, .bottom-divider {
     display: none !important;
 }
