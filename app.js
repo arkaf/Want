@@ -1,53 +1,101 @@
 // Firebase functionality will be accessed via window.db
 
+// Import the new modular architecture
+import { ItemManager } from './src/data/items.js';
+import { renderCard } from './src/ui/renderCard.js';
+import { isProbablyUrl } from './src/utils/url.js';
+import { openSheet, closeSheet } from './src/ui/bottomSheet.js';
+
 // Constants & utils
-const META_ENDPOINT = "https://want.fiorearcangelodesign.workers.dev/meta"; // our Cloudflare Worker
-const API = "https://want.fiorearcangelodesign.workers.dev"; // Worker API
 const PASTE_DEBOUNCE_MS = 120;
 
 function domainFrom(url) {
     try { return new URL(url).hostname.replace(/^www\./,''); } catch { return ""; }
 }
 
-function isProbablyUrl(s) {
-    try { const u = new URL(s); return !!u.protocol && !!u.hostname; } catch { return false; }
-}
 
-// Cloudflare Worker API functions
-const LIST_ID = localStorage.getItem('want.syncKey') || 'want-main';
 
-async function loadItems() {
-    const r = await fetch(`${API}/items?listId=${encodeURIComponent(LIST_ID)}`);
-    const { items } = await r.json();
-    return items || [];
-}
+// Cloudflare Worker API functions (DISABLED - Local storage only)
+// const LIST_ID = localStorage.getItem('want.syncKey') || 'want-main';
 
-async function saveItemRemote(item) {
-    const r = await fetch(`${API}/items`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listId: LIST_ID, item })
-    });
-    const result = await r.json();
-    return result;
-}
+// async function loadItems() {
+//     try {
+//         console.log(`Fetching items from ${API}/items?listId=${encodeURIComponent(LIST_ID)}`);
+//         const r = await fetch(`${API}/items?listId=${encodeURIComponent(LIST_ID)}`);
+//         
+//         if (!r.ok) {
+//             console.error(`Worker API error: ${r.status} ${r.statusText}`);
+//             const errorText = await r.text();
+//             console.error('Error response:', errorText);
+//             throw new Error(`Worker API error: ${r.status} ${r.statusText}`);
+//         }
+//         
+//         const responseText = await r.text();
+//         console.log('Worker response:', responseText);
+//         
+//         const data = JSON.parse(responseText);
+//         const { items } = data;
+//         return items || [];
+//     } catch (error) {
+//         console.error('Error in loadItems:', error);
+//         throw error;
+//     }
+// }
 
-async function deleteItemRemote(id) {
-    const r = await fetch(`${API}/items?id=${encodeURIComponent(id)}&listId=${encodeURIComponent(LIST_ID)}`, {
-        method: "DELETE"
-    });
-    const result = await r.json();
-    return result;
-}
+// async function saveItemRemote(item) {
+//     try {
+//         console.log(`Saving item to ${API}/items`);
+//         const r = await fetch(`${API}/items`, {
+//             method: "POST",
+//             headers: { "Content-Type": "application/json" },
+//             body: JSON.stringify({ listId: LIST_ID, item })
+//         });
+//         
+//         if (!r.ok) {
+//             console.error(`Worker API error: ${r.status} ${r.statusText}`);
+//             const errorText = await r.text();
+//             console.error('Error response:', errorText);
+//             throw new Error(`Worker API error: ${r.status} ${r.statusText}`);
+//         }
+//         
+//         const result = await r.json();
+//         return result;
+//     } catch (error) {
+//         console.error('Error in saveItemRemote:', error);
+//         throw error;
+//     }
+// }
+
+// async function deleteItemRemote(id) {
+//     try {
+//         console.log(`Deleting item from ${API}/items?id=${encodeURIComponent(id)}&listId=${encodeURIComponent(LIST_ID)}`);
+//         const r = await fetch(`${API}/items?id=${encodeURIComponent(id)}&listId=${encodeURIComponent(LIST_ID)}`, {
+//             method: "DELETE"
+//         });
+//         
+//         if (!r.ok) {
+//             console.error(`Worker API error: ${r.status} ${r.statusText}`);
+//             const errorText = await r.text();
+//             console.error('Error response:', errorText);
+//             throw new Error(`Worker API error: ${r.status} ${r.statusText}`);
+//         }
+//         
+//         const result = await r.json();
+//         return result;
+//     } catch (error) {
+//         console.error('Error in deleteItemRemote:', error);
+//         throw error;
+//     }
+// }
 
 // Main application logic
 export class WantApp {
     constructor() {
         this.db = new WantDB();
-        // Use our Cloudflare Worker for metadata (server-side scrape)
-        this.META_ENDPOINT = 'https://want.fiorearcangelodesign.workers.dev';
+        this.itemManager = new ItemManager(this.db);
         this.selectedStore = null; // null = All
         this.pasteTimer = null;
+        this.addInFlight = false; // NEW: prevents double-firing
         
         // Wait for DOM to be ready before initializing
         if (document.readyState === 'loading') {
@@ -80,8 +128,11 @@ export class WantApp {
             if (s !== null && s !== "") this.selectedStore = s;
         } catch {}
         
-        // Load items from Cloudflare Worker
-        await this.loadItemsFromWorker();
+        // Load items from local IndexedDB
+        await this.renderGridFiltered();
+        
+        // Process hash for add.html redirects
+        this.processHashAdd();
         
         // Check for success message from add.html
         const urlParams = new URLSearchParams(window.location.search);
@@ -104,129 +155,26 @@ export class WantApp {
         if (!openAddBtn) console.warn('openAddBtn not found');
         if (!headerSettingsBtn) console.warn('settingsBtn not found');
 
-        openAddBtn?.removeEventListener('click', () => this.showModal());
-        openAddBtn?.addEventListener('click', () => this.showModal(), { passive: true });
+        openAddBtn?.removeEventListener('click', () => this.showAddSheet());
+        openAddBtn?.addEventListener('click', () => this.showAddSheet(), { passive: true });
 
-        headerSettingsBtn?.removeEventListener('click', () => this.showSettingsModal());
-        headerSettingsBtn?.addEventListener('click', () => this.showSettingsModal(), { passive: true });
+        headerSettingsBtn?.removeEventListener('click', () => this.showSettingsSheet());
+        headerSettingsBtn?.addEventListener('click', () => this.showSettingsSheet(), { passive: true });
 
-        // Modal events
-        const closeModal = document.getElementById('closeModal');
-        if (closeModal) {
-            closeModal.addEventListener('click', () => {
-                this.hideModal();
-            });
-        } else {
-            console.error('closeModal not found');
-        }
+        // Swipe to close is handled by the bottom sheet component
 
-        // Elements
-        const modal = document.getElementById('addModal');
-        const backdrop = document.getElementById('modalBackdrop');
+        // Form submission will be handled by attachAddFormHandler()
 
-        // Close only when clicking backdrop
-        backdrop.addEventListener('click', (e) => {
-            if (e.target === backdrop) this.hideModal();
-        });
-
-        // Prevent inside clicks from bubbling up
-        modal.addEventListener('click', (e) => e.stopPropagation(), { passive: true });
-        modal.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
-
-        // Don't close modal on input focus/blur
-        const urlInputEl = document.getElementById('urlInput');
-        if (urlInputEl) {
-            urlInputEl.addEventListener('focus', (e) => e.stopPropagation());
-            urlInputEl.addEventListener('blur', (e) => e.stopPropagation());
-        }
-
-        // Swipe to close on mobile (restricted to header)
-        this.setupSwipeToClose();
-
-        // Form submission
-        const form = document.getElementById('addForm');
-        const addBtn = document.getElementById('addItemBtn');
-
-        form?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const raw = urlInput.value.trim();
-            const url = this.normalizeUrl(raw);
-            if (!this.isProbablyUrl(url)) { 
-                alert('Paste a valid URL'); 
-                return; 
-            }
-
-            addBtn.disabled = true;
-            try {
-                await this.addUrlToWant(url);              // <-- same pipeline as paste
-            } catch (err) {
-                console.error('Add failed', err);
-                this.showToast?.('Could not add item');
-            } finally {
-                addBtn.disabled = false;
-            }
-        });
-
-        // URL field auto-extraction
-        const urlInput = document.getElementById('urlInput');
-        urlInput.addEventListener('input', () => {
-            this.updateAddButton(!!urlInput.value.trim());
-        });
-        urlInput.addEventListener('paste', (e) => {
-            // Let the paste happen first, then process
-            setTimeout(() => {
-                const value = urlInput.value.trim();
-                this.updateAddButton(!!value);
-            }, 10);
-        });
-        urlInput.addEventListener('blur', () => {
-            this.updateAddButton(!!urlInput.value.trim());
-        });
-
-        // Toggle advanced fields
-        document.getElementById('toggleAdvanced').addEventListener('click', () => {
-            this.toggleAdvancedFields();
-        });
-
-        // Settings modal
-        const settingsBtn = document.getElementById('settingsBtn');
-        if (settingsBtn) {
-            settingsBtn.addEventListener('click', () => {
-                this.showSettingsModal();
-            });
-        } else {
-            console.error('settingsBtn not found');
-        }
-
-        document.getElementById('closeSettingsModal').addEventListener('click', () => {
-            this.hideSettingsModal();
-        });
-
-        // Settings backdrop click
-        document.getElementById('settingsModal').addEventListener('click', (e) => {
-            if (e.target.id === 'settingsModal' || e.target.id === 'settingsModalBackdrop') {
-                this.hideSettingsModal();
-            }
-        });
-
-        // Export/Import
-        document.getElementById('exportBtn').addEventListener('click', () => {
-            this.exportData();
-        });
-
-        document.getElementById('importBtn').addEventListener('click', () => {
-            document.getElementById('importFile').click();
-        });
-
-        document.getElementById('importFile').addEventListener('change', (e) => {
-            this.importData(e.target.files[0]);
-        });
+        // URL field auto-extraction and other handlers will be attached dynamically
 
         // More menu controller
         this.setupMoreMenu();
 
         // Scroll shadow effect
         this.setupScrollShadow();
+
+        // Single click delegation for delete buttons
+        this.setupDeleteDelegation();
 
     }
 
@@ -235,7 +183,7 @@ export class WantApp {
             // If user is typing in an input/textarea or a modal is open, do NOT auto-add
             const active = document.activeElement;
             const typing = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
-            const modalOpen = !!document.querySelector('.modal[data-open="true"]');
+            const modalOpen = !!document.querySelector('.sheet.is-open');
             const dt = e.clipboardData || window.clipboardData;
             const text = dt?.getData('text')?.trim() || '';
 
@@ -261,13 +209,13 @@ export class WantApp {
         const u = new URLSearchParams(location.search).get('url');
         if (u) {
             const url = decodeURIComponent(u.trim());
-            if (this.isProbablyUrl(url)) this.handleUrlPaste(url);
+            if (isProbablyUrl(url)) this.handleUrlPaste(url);
         }
     }
 
     async handleUrlPaste(url) {
-        // Open the Add modal, pre-fill the URL input, start auto-extraction
-        this.showModal();
+        // Open the Add sheet, pre-fill the URL input, start auto-extraction
+        this.showAddSheet();
         const urlInput = document.getElementById('urlInput');
         if (urlInput) {
             urlInput.value = url;
@@ -275,73 +223,196 @@ export class WantApp {
         }
     }
 
-    showModal() {
-        const modal = document.getElementById('addModal');
-        modal.removeAttribute('hidden');
-        modal.setAttribute('data-open', 'true');
-        modal.style.display = 'flex';
+    showAddSheet() {
+        const html = `
+            <div class="sheet-header">
+                <h2>Add to Want</h2>
+                <button class="sheet-close-btn" onclick="window.wantApp.hideAddSheet()">&times;</button>
+            </div>
+            <form id="addForm">
+                <div class="form-group">
+                    <label for="urlInput">URL *</label>
+                    <input type="url" id="urlInput" name="url" required placeholder="https://example.com">
+                </div>
+
+                <div id="metaPreview" class="hidden preview">
+                    <div class="preview-img-wrap">
+                        <img id="previewImg" alt="Preview" />
+                    </div>
+                    <div class="preview-title" id="previewTitle"></div>
+                    <div class="preview-meta">
+                        <span id="previewPrice"></span>
+                        <span id="previewDomain"></span>
+                    </div>
+                    <button type="button" id="toggleAdvanced" class="linklike">Edit details</button>
+                </div>
+
+                <!-- Advanced fields (hidden by default) -->
+                <div id="advanced" class="hidden">
+                    <div class="form-group">
+                        <label for="titleInput">Title</label>
+                        <input type="text" id="titleInput" name="title">
+                    </div>
+                    <div class="form-group">
+                        <label for="priceInput">Price</label>
+                        <input type="text" id="priceInput" name="price" placeholder="$99.99">
+                    </div>
+                    <div class="form-group">
+                        <label for="imageInput">Image URL</label>
+                        <input type="url" id="imageInput" name="image" placeholder="https://example.com/image.jpg">
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" id="addItemBtn" class="btn-primary" disabled>Add Item</button>
+                </div>
+            </form>
+        `;
         
-        // Trigger animation after display is set
+        openSheet(html);
+        
+        // Focus the URL input
         setTimeout(() => {
-            modal.classList.add('show');
-        }, 10);
+            const urlInput = document.getElementById('urlInput');
+            if (urlInput) urlInput.focus();
+        }, 100);
         
-        const urlInput = document.getElementById('urlInput');
-        if (urlInput) {
-            urlInput.focus();
-        }
-        
-        // Prevent body scroll
-        document.body.style.overflow = 'hidden';
+        // Attach form handler
+        this.attachAddFormHandler();
     }
 
-    hideModal() {
-        const modal = document.getElementById('addModal');
-        modal.classList.remove('show');
+    hideAddSheet() {
+        closeSheet();
         
-        // Wait for animation to complete
-        setTimeout(() => {
-            modal.style.display = 'none';
-            modal.setAttribute('hidden', 'true');
-            modal.removeAttribute('data-open');
-            document.body.style.overflow = '';
-        }, 300);
+        // Clear form
+        const form = document.getElementById('addForm');
+        if (form) form.reset();
         
-        document.getElementById('addForm').reset();
         this.hidePreview();
-        document.getElementById('advanced').classList.add('hidden');
-        document.getElementById('toggleAdvanced').textContent = 'Edit details';
+        const advanced = document.getElementById('advanced');
+        if (advanced) advanced.classList.add('hidden');
+        const toggleAdvanced = document.getElementById('toggleAdvanced');
+        if (toggleAdvanced) toggleAdvanced.textContent = 'Edit details';
         this.updateAddButton(false);
     }
 
-    showSettingsModal() {
-        const modal = document.getElementById('settingsModal');
-        modal.removeAttribute('hidden');
-        modal.setAttribute('data-open', 'true');
-        modal.style.display = 'flex';
+    showSettingsSheet() {
+        const html = `
+            <div class="sheet-header">
+                <h2>Settings</h2>
+                <button class="sheet-close-btn" onclick="window.wantApp.hideSettingsSheet()">&times;</button>
+            </div>
+            <div class="settings-content">
+                <div class="settings-section">
+                    <h3>Data Management</h3>
+                    <div class="settings-actions">
+                        <button id="exportBtn" class="btn-secondary">Export Data</button>
+                        <button id="importBtn" class="btn-secondary">Import Data</button>
+                    </div>
+                    <input type="file" id="importFile" accept=".json" style="display: none;">
+                </div>
+                <div class="settings-section">
+                    <h3>About</h3>
+                    <p>Want - Your personal wishlist</p>
+                    <p>Version 1.0.0</p>
+                    <p>Made in London by JAG Studio Ltd</p>
+                </div>
+            </div>
+        `;
         
-        // Trigger animation after display is set
-        setTimeout(() => {
-            modal.classList.add('show');
-        }, 10);
+        openSheet(html);
         
-        // Prevent body scroll
-        document.body.style.overflow = 'hidden';
+        // Attach settings handlers
+        this.attachSettingsHandlers();
     }
 
-    hideSettingsModal() {
-        const modal = document.getElementById('settingsModal');
-        modal.classList.remove('show');
+    hideSettingsSheet() {
+        closeSheet();
+    }
+
+    attachAddFormHandler() {
+        const form = document.getElementById('addForm');
+        const addBtn = document.getElementById('addItemBtn');
+        const urlInput = document.getElementById('urlInput');
+
+        if (!form || !addBtn || !urlInput) return;
+
+        // Remove existing handlers
+        form.removeEventListener('submit', this.handleAddFormSubmit);
         
-        // Wait for animation to complete before hiding
-        setTimeout(() => {
-            modal.style.display = 'none';
-            modal.setAttribute('hidden', 'true');
-            modal.removeAttribute('data-open');
-        }, 300);
+        // Add new handler
+        this.handleAddFormSubmit = async (e) => {
+            e.preventDefault();
+            const raw = urlInput.value.trim();
+            const url = this.normalizeUrl(raw);
+            if (!isProbablyUrl(url)) { 
+                alert('Paste a valid URL'); 
+                return; 
+            }
+
+            addBtn.disabled = true;
+            try {
+                await this.addItemDirectly(url);
+                this.hideAddSheet();
+            } catch (error) {
+                console.error('Failed to add item:', error);
+                alert('Failed to add item. Please try again.');
+            } finally {
+                addBtn.disabled = false;
+            }
+        };
         
-        // Restore body scroll
-        document.body.style.overflow = '';
+        form.addEventListener('submit', this.handleAddFormSubmit);
+
+        // URL field auto-extraction
+        urlInput.addEventListener('input', () => {
+            this.updateAddButton(!!urlInput.value.trim());
+        });
+        
+        urlInput.addEventListener('paste', (e) => {
+            // Let the paste happen first, then process
+            setTimeout(() => {
+                const value = urlInput.value.trim();
+                this.updateAddButton(!!value);
+            }, 10);
+        });
+        
+        urlInput.addEventListener('blur', () => {
+            this.updateAddButton(!!urlInput.value.trim());
+        });
+
+        // Toggle advanced fields
+        const toggleAdvanced = document.getElementById('toggleAdvanced');
+        if (toggleAdvanced) {
+            toggleAdvanced.addEventListener('click', () => {
+                this.toggleAdvancedFields();
+            });
+        }
+    }
+
+    attachSettingsHandlers() {
+        // Export/Import
+        const exportBtn = document.getElementById('exportBtn');
+        const importBtn = document.getElementById('importBtn');
+        const importFile = document.getElementById('importFile');
+
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => {
+                this.exportData();
+            });
+        }
+
+        if (importBtn) {
+            importBtn.addEventListener('click', () => {
+                if (importFile) importFile.click();
+            });
+        }
+
+        if (importFile) {
+            importFile.addEventListener('change', (e) => {
+                this.importData(e.target.files[0]);
+            });
+        }
     }
 
 
@@ -383,16 +454,7 @@ export class WantApp {
         });
     }
 
-    // URL validation and normalization helpers
-    isProbablyUrl(str) {
-        if (!str) return false;
-        try { 
-            const u = new URL(str); 
-            return /^https?:$/.test(u.protocol); 
-        } catch { 
-            return /^[\w.-]+\.[a-z]{2,}([\/?#].*)?$/i.test(str); 
-        }
-    }
+
 
     normalizeUrl(str) {
         const s = String(str).trim();
@@ -417,7 +479,7 @@ export class WantApp {
 
     async buildItemFromUrl(url) {
         const host = this.hostnameOf(url);
-        const meta = await this.enrichFromMeta(url); // must return {title,image,price} or null
+        const meta = this.extractBasicMetadata(url); // Use local fallback instead of Worker
 
         // image: prefer proxied, fallback favicon, runtime onerror → original
         const original = meta?.image || '';
@@ -436,41 +498,32 @@ export class WantApp {
         };
     }
 
-    // single add function used by ALL entry points
-    async addUrlToWant(url) {
-        const item = await this.buildItemFromUrl(url);
-        const id = await this.saveItem(item);        // save to Worker + local
-        
-        await this.renderGridFiltered();             // refresh UI with filtering
-        this.hideModal?.();                          // if modal was open
-        this.showToast?.('Saved to Want');           // optional
-        return id;
-    }
+    // Legacy method - no longer used (replaced by addItemDirectly)
 
-    // Load items from Cloudflare Worker
-    async loadItemsFromWorker() {
-        try {
-            console.log('Loading items from Cloudflare Worker...');
-            const items = await loadItems();
-            
-            // Update local items array
-            this.items = items;
-            
-            // Also cache in IndexedDB for offline access
-            for (const item of items) {
-                await this.db.upsertItem(item);
-            }
-            
-            console.log(`Loaded ${items.length} items from Worker`);
-            
-            // Render the grid
-            await this.renderGridFiltered();
-        } catch (error) {
-            console.error('Error loading items from Worker:', error);
-            // Fallback to local IndexedDB
-            await this.renderGridFiltered();
-        }
-    }
+    // Load items from Cloudflare Worker (DISABLED)
+    // async loadItemsFromWorker() {
+    //     try {
+    //         console.log('Loading items from Cloudflare Worker...');
+    //         const items = await loadItems();
+    //         
+    //         // Update local items array
+    //         this.items = items;
+    //         
+    //         // Also cache in IndexedDB for offline access
+    //         for (const item of items) {
+    //             await this.db.upsertItem(item);
+    //         }
+    //         
+    //         console.log(`Loaded ${items.length} items from Worker`);
+    //         
+    //         // Render the grid
+    //         await this.renderGridFiltered();
+    //     } catch (error) {
+    //         console.error('Error loading items from Worker:', error);
+    //         // Fallback to local IndexedDB
+    //         await this.renderGridFiltered();
+    //     }
+    // }
 
 
 
@@ -513,6 +566,15 @@ export class WantApp {
         const el = document.getElementById('storeTags');
         if (!el) return;
 
+        // Hide tags when there are no items
+        if (items.length === 0) {
+            el.style.display = 'none';
+            return;
+        }
+
+        // Show tags when there are items
+        el.style.display = 'block';
+
         const counts = this.getDomainCounts(items);
         const entries = Array.from(counts.entries())
             .sort((a, b) => a[0].localeCompare(b[0])); // sort alphabetically
@@ -550,7 +612,7 @@ export class WantApp {
     }
 
     async renderGridFiltered() {
-        const items = await this.db.getAllItems();
+        const items = await this.itemManager.getAllItems();
         this.items = items; // Store items in instance
         const filtered = this.selectedStore
             ? items.filter(it => (it.domain || this.getMainDomain(it.url)) === this.selectedStore)
@@ -570,51 +632,7 @@ export class WantApp {
         return div.innerHTML;
     }
 
-    // Swipe to close functionality for mobile
-    setupSwipeToClose() {
-        // Setup swipe-to-close for Add modal
-        this.setupModalSwipeToClose('addModal', () => this.hideModal());
-        
-        // Setup swipe-to-close for Settings modal
-        this.setupModalSwipeToClose('settingsModal', () => this.hideSettingsModal());
-    }
-
-    setupModalSwipeToClose(modalId, closeCallback) {
-        const modal = document.getElementById(modalId);
-        let startY = null;
-        let currentY = null;
-
-        // Only allow swipe from the grabber/header area
-        const grabberArea = modal.querySelector('.modal-grabber') || modal.querySelector('.modal-header');
-        
-        if (!grabberArea) return;
-
-        grabberArea.addEventListener('touchstart', (e) => {
-            startY = e.touches[0].clientY;
-            currentY = startY;
-        }, { passive: true });
-
-        grabberArea.addEventListener('touchmove', (e) => {
-            if (startY == null) return;
-            currentY = e.touches[0].clientY;
-            const delta = Math.max(0, currentY - startY);
-            if (window.matchMedia('(max-width: 768px)').matches) {
-                const modalContent = modal.querySelector('.modal-content');
-                modalContent.style.transform = `translateY(${delta}px)`; // visual feedback only
-            }
-        }, { passive: true });
-
-        grabberArea.addEventListener('touchend', () => {
-            if (startY == null) return;
-            const delta = Math.max(0, (currentY ?? startY) - startY);
-            const modalContent = modal.querySelector('.modal-content');
-            modalContent.style.transform = '';
-            if (delta > 120 && window.matchMedia('(max-width: 768px)').matches) {
-                closeCallback();
-            }
-            startY = currentY = null;
-        });
-    }
+    // Swipe to close is now handled by the bottom sheet component
 
         createItemCard(item) {
         const domain = item.domain || this.hostnameOf(item.url);
@@ -726,32 +744,18 @@ export class WantApp {
     }
 
     async deleteItem(id) {
-        if (confirm('Are you sure you want to delete this item?')) {
-            try {
-                // Delete from Cloudflare Worker first
-                const result = await deleteItemRemote(id);
-                if (result.ok) {
-                    console.log('Item deleted from Worker');
-                    
-                    // Also delete from local database
-                    await this.db.deleteItem(id);
-                    
-                    // Update local items array
-                    this.items = this.items.filter(item => item.id !== id);
-                    
-                    await this.renderGridFiltered();
-                    this.showToast('Item deleted');
-                } else {
-                    throw new Error('Failed to delete from Worker');
-                }
-            } catch (error) {
-                console.error('Error deleting item:', error);
-                // Fallback to local deletion only
-                await this.db.deleteItem(id);
-                this.items = this.items.filter(item => item.id !== id);
-                await this.renderGridFiltered();
-                this.showToast('Item deleted (local only)');
-            }
+        try {
+            // Delete from local database only
+            await this.itemManager.deleteItem(id);
+            
+            // Update local items array
+            this.items = this.items.filter(item => item.id !== id);
+            
+            await this.renderGridFiltered();
+            this.showToast('Item deleted');
+        } catch (error) {
+            console.error('Error deleting item:', error);
+            this.showToast('Error deleting item');
         }
     }
 
@@ -789,7 +793,7 @@ export class WantApp {
         }
 
         // Check if URL is valid
-        if (!this.isProbablyUrl(url)) {
+        if (!isProbablyUrl(url)) {
             console.log('URL not valid:', url);
             this.hidePreview();
             this.updateAddButton(false);
@@ -805,42 +809,23 @@ export class WantApp {
         this.showPreviewLoading();
 
         try {
-            const meta = await this.enrichFromMeta(url);
+            // Use local metadata extraction (Worker disabled)
+            const meta = this.extractBasicMetadata(url);
             const host = this.hostnameOf(url);
             
-            if (meta) {
-                // Worker succeeded
-                const title = meta.title || host;
-                const image = meta.image || `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
-                const price = meta.price || '';
+            console.log('Preview data (local):', { ...meta, domain: host });
 
-                console.log('Preview data (from worker):', { title, image, price, domain: host });
+            // Update preview
+            this.updatePreview({ ...meta, domain: host });
+            this.showPreview();
 
-                // Update preview
-                this.updatePreview({ title, image, price, domain: host });
-                this.showPreview();
-
-                // Update advanced fields if they're visible
-                if (!document.getElementById('advanced').classList.contains('hidden')) {
-                    this.setAdvancedFormValues({ title, image, price });
-                }
-            } else {
-                // Worker failed, use fallback
-                const fallbackMeta = this.extractBasicMetadata(url);
-                console.log('Preview data (fallback):', { ...fallbackMeta, domain: host });
-
-                // Update preview
-                this.updatePreview({ ...fallbackMeta, domain: host });
-                this.showPreview();
-
-                // Update advanced fields if they're visible
-                if (!document.getElementById('advanced').classList.contains('hidden')) {
-                    this.setAdvancedFormValues(fallbackMeta);
-                }
+            // Update advanced fields if they're visible
+            if (!document.getElementById('advanced').classList.contains('hidden')) {
+                this.setAdvancedFormValues(meta);
             }
         } catch (error) {
             console.error('Error handling URL input:', error);
-            // Show fallback preview instead of hiding
+            // Show fallback preview
             const fallbackMeta = this.extractBasicMetadata(url);
             this.updatePreview({ ...fallbackMeta, domain: this.hostnameOf(url) });
             this.showPreview();
@@ -849,42 +834,41 @@ export class WantApp {
 
 
 
-    async enrichFromMeta(url) {
-        if (!this.META_ENDPOINT) return null;
-        try {
-            const r = await fetch(`${this.META_ENDPOINT}/meta?url=${encodeURIComponent(url)}`, {
-                method: 'GET',
-                mode: 'cors',
-                headers: {
-                    'Accept': 'application/json',
-                }
-            });
-            if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
-            const d = await r.json();
-            
-            if (d.error) {
-                console.log('Worker returned error:', d.error);
-                return null;
-            }
-            
-            // Process image URL - store original for fallback
-            let image = '';
-            if (d.image) {
-                // Store original URL for fallback, use weserv.nl for display
-                image = d.image;
-            }
-            
-            return {
-                title: d.title || '',
-                image,
-                price: d.price || '',
-            };
-        } catch (error) {
-            console.log('enrichFromMeta failed:', error.message);
-            // Return null to trigger fallback
-            return null;
-        }
-    }
+    // async enrichFromMeta(url) {
+    //     if (!this.META_ENDPOINT) return null;
+    //     try {
+    //         const r = await fetch(`${this.META_ENDPOINT}/meta?url=${encodeURIComponent(url)}`, {
+    //             method: 'GET',
+    //             mode: 'cors',
+    //             headers: {
+    //                 'Accept': 'application/json',
+    //             }
+    //         });
+    //         if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+    //         const d = await r.json();
+    //         
+    //         if (d.error) {
+    //             console.log('Worker returned error:', d.error);
+    //             return null;
+    //         }
+    //         
+    //         // Process image URL - store original for fallback
+    //         let image = '';
+    //         if (d.image) {
+    //             // Store original URL for fallback, use weserv.nl for display
+    //         }
+    //         
+    //         return {
+    //             title: d.title || '',
+    //             image,
+    //             price: d.price || '',
+    //         };
+    //     } catch (error) {
+    //         console.log('enrichFromMeta failed:', error.message);
+    //         // Return null to trigger fallback
+    //         return null;
+    //     }
+    // }
 
     // Fallback metadata extraction when worker fails
     extractBasicMetadata(url) {
@@ -1226,6 +1210,39 @@ export class WantApp {
         }, { passive: true });
     }
 
+    setupDeleteDelegation() {
+        const grid = document.getElementById('grid');
+        if (!grid) return;
+
+        grid.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-action="delete"]');
+            if (!btn) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const id = btn.getAttribute('data-id');
+            if (!id) return;
+
+            // Confirm exactly once
+            if (!confirm('Delete this item?')) return;
+
+            this.deleteItem(id);
+        });
+    }
+
+    processHashAdd() {
+        const hash = window.location.hash;
+        const match = hash.match(/#add=(.+)$/);
+        if (match) {
+            const url = decodeURIComponent(match[1]);
+            // Clean hash
+            history.replaceState(null, '', './');
+            // Add the item
+            this.addItemDirectly(url);
+        }
+    }
+
     // Direct add pipeline (optimistic UI)
     
     // Show an optimistic placeholder card
@@ -1245,43 +1262,19 @@ export class WantApp {
         return id;
     }
 
-    // Fetch meta from Worker
-    async fetchMeta(url) {
-        const r = await fetch(`${META_ENDPOINT}?url=${encodeURIComponent(url)}`, { mode: 'cors' });
-        if (!r.ok) throw new Error(`meta ${r.status}`);
-        const data = await r.json();
-        return {
-            title: data.title || domainFrom(url),
-            image: data.image || "",
-            price: data.price || "",
-        };
-    }
+    // Fetch meta from Worker (DISABLED - using local extraction)
+    // async fetchMeta(url) {
+    //     const r = await fetch(`${META_ENDPOINT}?url=${encodeURIComponent(url)}`, { mode: 'cors' });
+    //     if (!r.ok) throw new Error(`meta ${r.status}`);
+    //     const data = await r.json();
+    //     return {
+    //         title: data.title || domainFrom(url),
+    //         image: data.image || "",
+    //         price: data.price || "",
+    //     };
+    // }
 
-    // Save item to database and Worker
-    async saveItem(obj) {
-        try {
-            // Save to Cloudflare Worker first
-            const result = await saveItemRemote(obj);
-            if (result.ok) {
-                console.log('Item saved to Worker with ID:', result.id);
-                
-                // Update the object with the returned ID
-                obj.id = result.id;
-                
-                // Also save to local database for offline access
-                await this.db.upsertItem(obj);
-                
-                return result.id;
-            } else {
-                throw new Error('Failed to save to Worker');
-            }
-        } catch (error) {
-            console.error('Failed to save to Worker:', error);
-            // Fallback to local storage only
-            const item = await this.db.addItem(obj);
-            return item.id;
-        }
-    }
+    // Legacy method - no longer used (replaced by itemManager.createItemFromUrl)
 
     // Replace placeholder with real card or remove on error
     reconcileCard(tempId, finalObj, err) {
@@ -1300,21 +1293,19 @@ export class WantApp {
 
     // Main direct-add flow
     async addItemDirectly(url) {
+        if (this.addInFlight) return;      // guard
+        this.addInFlight = true;
         const tempId = this.addOptimisticCard(url);
         try {
-            const meta = await this.fetchMeta(url);
-            const finalObj = {
-                url,
-                title: meta.title,
-                image: meta.image,
-                price: meta.price,
-                site: domainFrom(url),
-            };
-            const newId = await this.saveItem(finalObj);
-            this.reconcileCard(tempId, { id: newId, ...finalObj });
+            const item = await this.itemManager.createItemFromUrl(url); // this should also persist
+            this.reconcileCard(tempId, item);
+            this.showToast('Item added successfully');
         } catch (e) {
             console.error("addItemDirectly failed", e);
             this.reconcileCard(tempId, null, e);
+            this.showToast(e?.message === 'Item already exists' ? 'Item already exists' : 'Failed to add item');
+        } finally {
+            this.addInFlight = false;
         }
     }
 
@@ -1353,7 +1344,4 @@ export class WantApp {
     }
 }
 
-// Initialize app when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    new WantApp();
-});
+// App is initialized from index.html

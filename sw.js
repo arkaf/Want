@@ -1,5 +1,5 @@
 // Service Worker for Want PWA
-const CACHE_NAME = 'want-v44';
+const CACHE_NAME = 'want-v58';
 const urlsToCache = [
     '/',
     '/index.html',
@@ -14,6 +14,7 @@ const urlsToCache = [
 
 // Install event - cache resources
 self.addEventListener('install', event => {
+    self.skipWaiting(); // NEW: activate immediately
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => {
@@ -25,6 +26,12 @@ self.addEventListener('install', event => {
 
 // Fetch event - serve from cache when offline
 self.addEventListener('fetch', event => {
+    const u = new URL(event.request.url);
+    if (u.pathname.startsWith('/api/')) {
+        event.respondWith(fetch(event.request, { cache: 'no-store' }));
+        return;
+    }
+    
     event.respondWith(
         caches.match(event.request)
             .then(response => {
@@ -42,16 +49,9 @@ self.addEventListener('fetch', event => {
 
 // Activate event - clean up old caches
 self.addEventListener('activate', event => {
-    event.waitUntil(
-        caches.keys().then(cacheNames => {
-            return Promise.all(
-                cacheNames.map(cacheName => {
-                    if (cacheName !== CACHE_NAME) {
-                        console.log('Deleting old cache:', cacheName);
-                        return caches.delete(cacheName);
-                    }
-                })
-            );
-        })
-    );
+    event.waitUntil((async () => {
+        const names = await caches.keys();
+        await Promise.all(names.map(n => (n !== CACHE_NAME ? caches.delete(n) : null)));
+        await self.clients.claim(); // NEW: take control now
+    })());
 });

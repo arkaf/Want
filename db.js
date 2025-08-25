@@ -22,13 +22,32 @@ class WantDB {
         console.log('Database addItem called with:', item);
         if (!this.db) await this.init();
         
+        // Normalize URL (strip hash, maybe prune tracking params)
+        const normalizedUrl = this.normalizeUrl(item.url);
+        
+        // Check if item with same normalized URL exists
+        const existingItem = await this.getItemByUrl(normalizedUrl);
+        if (existingItem) {
+            console.log('Item with URL already exists, updating:', normalizedUrl);
+            const updatedItem = { 
+                ...existingItem, 
+                title: item.title,
+                price: item.price || '',
+                image: item.image || '',
+                createdAt: Date.now() // Refresh timestamp
+            };
+            await this.db.put(this.storeName, updatedItem);
+            console.log('Item updated in database successfully');
+            return updatedItem;
+        }
+        
         const newItem = {
-            id: crypto.randomUUID(),
-            url: item.url,
+            id: item.id || crypto.randomUUID(),     // <-- reuse existing id
+            url: normalizedUrl,
             title: item.title,
             price: item.price || '',
             image: item.image || '',
-            domain: item.domain || this.extractDomain(item.url),
+            domain: item.domain || this.extractDomain(normalizedUrl),
             createdAt: Date.now()
         };
 
@@ -39,22 +58,7 @@ class WantDB {
             console.log('Item added to database successfully');
             return newItem;
         } catch (error) {
-            console.log('Database error:', error);
-            if (error.name === 'ConstraintError') {
-                console.log('ConstraintError - updating existing item');
-                // URL already exists, update the item
-                const existingItem = await this.getItemByUrl(item.url);
-                const updatedItem = { 
-                    ...existingItem, 
-                    title: newItem.title,
-                    price: newItem.price,
-                    image: newItem.image,
-                    createdAt: Date.now() // Refresh timestamp
-                };
-                await this.db.put(this.storeName, updatedItem);
-                console.log('Item updated in database successfully');
-                return updatedItem;
-            }
+            console.error('Database error:', error);
             throw error;
         }
     }
@@ -69,14 +73,37 @@ class WantDB {
     async getItemByUrl(url) {
         if (!this.db) await this.init();
         
-        const index = this.db.transaction(this.storeName).store.index('url');
-        return await index.get(url);
+        try {
+            const transaction = this.db.transaction(this.storeName, 'readonly');
+            const store = transaction.objectStore(this.storeName);
+            const index = store.index('url');
+            const result = await index.get(url);
+            return result;
+        } catch (error) {
+            console.error('Error getting item by URL:', error);
+            return null;
+        }
     }
 
     async getItemById(id) {
         if (!this.db) await this.init();
         
         return await this.db.get(this.storeName, id);
+    }
+
+    async itemExists(url) {
+        if (!this.db) await this.init();
+        
+        try {
+            const transaction = this.db.transaction(this.storeName, 'readonly');
+            const store = transaction.objectStore(this.storeName);
+            const index = store.index('url');
+            const result = await index.get(url);
+            return !!result;
+        } catch (error) {
+            console.error('Error checking if item exists:', error);
+            return false;
+        }
     }
 
     async deleteItem(id) {
@@ -176,6 +203,19 @@ class WantDB {
             return urlObj.hostname.replace('www.', '');
         } catch {
             return 'unknown';
+        }
+    }
+
+    normalizeUrl(url) {
+        try {
+            const u = new URL(url);
+            u.hash = ''; // strip fragment
+            // Optionally strip common tracking parameters
+            const trackingParams = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid'];
+            trackingParams.forEach(param => u.searchParams.delete(param));
+            return u.toString();
+        } catch {
+            return url; // return original if URL parsing fails
         }
     }
 }
