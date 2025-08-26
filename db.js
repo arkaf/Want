@@ -1,9 +1,11 @@
-// Database operations using idb helper
+// Database operations using idb helper with cloud sync
 class WantDB {
     constructor() {
         this.dbName = 'want-db';
         this.version = 1;
         this.storeName = 'items';
+        this.syncEndpoint = 'https://want-extract.fiorearcangelodesign.workers.dev/api/items';
+        this.syncEnabled = true;
     }
 
     async init() {
@@ -56,6 +58,12 @@ class WantDB {
         try {
             await this.db.add(this.storeName, newItem);
             console.log('Item added to database successfully');
+            
+            // Sync to cloud
+            if (this.syncEnabled) {
+                await this.syncToCloud();
+            }
+            
             return newItem;
         } catch (error) {
             console.error('Database error:', error);
@@ -110,6 +118,11 @@ class WantDB {
         if (!this.db) await this.init();
         
         await this.db.delete(this.storeName, id);
+        
+        // Sync to cloud
+        if (this.syncEnabled) {
+            await this.syncToCloud();
+        }
     }
 
     async clearAllItems() {
@@ -119,6 +132,11 @@ class WantDB {
             await this.deleteItem(item.id);
         }
         console.log('All items cleared from database');
+        
+        // Sync to cloud
+        if (this.syncEnabled) {
+            await this.syncToCloud([]);
+        }
     }
 
     async addOrUpdateItem(item) {
@@ -231,6 +249,86 @@ class WantDB {
         } catch {
             return url; // return original if URL parsing fails
         }
+    }
+
+    // Cloud sync methods
+    async syncFromCloud() {
+        if (!this.syncEnabled) return;
+        
+        try {
+            const response = await fetch(this.syncEndpoint, {
+                method: 'GET',
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                console.log('Failed to sync from cloud:', response.status);
+                return;
+            }
+            
+            const cloudItems = await response.json();
+            
+            // Merge cloud items with local items
+            const localItems = await this.getAllItems();
+            const mergedItems = this.mergeItems(localItems, cloudItems);
+            
+            // Update local database with merged items
+            await this.db.clear(this.storeName);
+            for (const item of mergedItems) {
+                await this.db.add(this.storeName, item);
+            }
+            
+            console.log('Synced from cloud:', cloudItems.length, 'items');
+        } catch (error) {
+            console.error('Sync from cloud error:', error);
+        }
+    }
+
+    async syncToCloud(items = null) {
+        if (!this.syncEnabled) return;
+        
+        try {
+            const itemsToSync = items || await this.getAllItems();
+            
+            const response = await fetch(this.syncEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify(itemsToSync)
+            });
+            
+            if (!response.ok) {
+                console.log('Failed to sync to cloud:', response.status);
+                return;
+            }
+            
+            console.log('Synced to cloud:', itemsToSync.length, 'items');
+        } catch (error) {
+            console.error('Sync to cloud error:', error);
+        }
+    }
+
+    mergeItems(localItems, cloudItems) {
+        // Create a map of items by URL for easy lookup
+        const itemMap = new Map();
+        
+        // Add local items first
+        for (const item of localItems) {
+            itemMap.set(item.url, item);
+        }
+        
+        // Merge cloud items, keeping the most recent version
+        for (const cloudItem of cloudItems) {
+            const localItem = itemMap.get(cloudItem.url);
+            if (!localItem || cloudItem.createdAt > localItem.createdAt) {
+                itemMap.set(cloudItem.url, cloudItem);
+            }
+        }
+        
+        // Convert back to array and sort by creation date
+        return Array.from(itemMap.values()).sort((a, b) => b.createdAt - a.createdAt);
     }
 }
 

@@ -1,5 +1,5 @@
 // Service Worker for Want PWA
-const CACHE_NAME = 'want-v71';
+const CACHE_NAME = 'want-v72';
 const urlsToCache = [
     '/',
     '/index.html',
@@ -52,6 +52,13 @@ self.addEventListener('fetch', event => {
     
     event.respondWith((async () => {
         try {
+            // Check for cache-busting parameter
+            const url = new URL(event.request.url);
+            if (url.searchParams.has('cb')) {
+                // Force fresh fetch for cache-busting
+                return await fetch(event.request, { cache: 'no-store' });
+            }
+            
             // Cache-first strategy for static assets
             const cache = await caches.open(CACHE_NAME);
             const cached = await cache.match(event.request);

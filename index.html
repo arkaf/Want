@@ -20,7 +20,7 @@
         <meta name="apple-mobile-web-app-title" content="Want">
         <meta name="theme-color" content="#ffffff">
     
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2">
     <script>
         // Fix for CORS issues when running locally
         if (window.location.protocol === 'file:') {
@@ -55,17 +55,12 @@
 
     <!-- Signup screen -->
     <div id="auth-screen" class="auth-screen" hidden>
-        <div class="auth-brand">Want</div>
+        <img src="assets/want.svg" alt="Want" class="auth-logo" />
         <div class="auth-subtitle">Your smarter shopping list.</div>
 
         <button id="btn-google" class="auth-btn auth-btn-google">
             <span class="gmark"></span>
-            Sign up with Google
-        </button>
-
-        <button id="btn-apple" class="auth-btn auth-btn-apple">
-            <span class="amark"></span>
-            Sign up with Apple
+            Continue with Google
         </button>
     </div>
 
@@ -110,13 +105,21 @@
         
 
     <script src="vendor/idb.min.js"></script>
-    <script src="db.js"></script>
+    <script src="db.js?v=2"></script>
     <script type="module">
         // Import and initialize the app
-        import { WantApp } from './app.js';
+        import { WantApp } from './app.js?v=2';
         
         // Create app instance when DOM is loaded
         document.addEventListener('DOMContentLoaded', () => {
+            // Force hard refresh if cache-busting parameter is present
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('cb')) {
+                // Remove cache-busting parameter and reload
+                const newUrl = window.location.pathname + window.location.search.replace(/[?&]cb=\d+/, '').replace(/^\?&/, '?').replace(/^\?$/, '');
+                window.history.replaceState({}, document.title, newUrl);
+            }
+            
             window.wantApp = new WantApp();
         });
         

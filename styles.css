@@ -910,38 +910,63 @@ body.sheet-open {
 
 /* Signup screen */
 .auth-screen {
-    display: grid;
-    place-items: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     padding: 32px 16px;
-    min-height: calc(100vh - env(safe-area-inset-bottom));
+    height: 100vh;
+    text-align: center;
+    overflow: hidden;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
 }
-.auth-brand {
-    font-family: "Playfair Display", serif;
-    font-size: 42px;
-    line-height: 1;
-    margin-top: 32px;
+
+/* Hide navbar when auth screen is shown */
+.auth-screen ~ .topbar,
+.auth-screen ~ header {
+    display: none !important;
+}
+.auth-logo {
+    width: 120px;
+    height: auto;
+    margin-bottom: 16px;
 }
 .auth-subtitle {
-    margin-top: 8px;
+    margin-bottom: 32px;
     color: rgba(0,0,0,.65);
+    font-size: 16px;
 }
 
 .auth-btn {
     width: min(420px, 88vw);
     height: 52px;
     border-radius: 12px;
-    border: 1px solid rgba(0,0,0,.12);
-    background: #fff;
+    border: none;
+    background: #000;
+    color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 10px;
     font-weight: 600;
     margin-top: 18px;
-    box-shadow: 0 1px 0 rgba(0,0,0,.02);
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.auth-btn:hover {
+    background: #333;
+}
+
+.auth-btn:active {
+    background: #222;
 }
 .auth-btn-google .gmark { width: 18px; height: 18px; background: url(/assets/google.svg) no-repeat center/contain; }
-.auth-btn-apple  .amark { width: 18px; height: 18px; background: url(/assets/apple.svg)  no-repeat center/contain; }
 
 /* Avatar in navbar */
 .avatar-btn {

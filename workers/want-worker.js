@@ -26,6 +26,25 @@ function cors(res, env) {
   return r
 }
 
+// — Utility: CORS with dynamic origin
+function corsDynamic(res, req, env) {
+  const r = new Response(res.body, res)
+  const origin = req.headers.get('origin')
+  
+  // Allow both localhost and GitHub Pages
+  if (origin === 'http://localhost:8054' || origin === 'https://arkaf.github.io') {
+    r.headers.set('Access-Control-Allow-Origin', origin)
+  } else {
+    r.headers.set('Access-Control-Allow-Origin', env.ALLOWED_ORIGIN || 'http://localhost:8054')
+  }
+  
+  r.headers.set('Vary', 'Origin')
+  r.headers.set('Access-Control-Allow-Credentials', 'true')
+  r.headers.set('Access-Control-Allow-Headers', 'Content-Type')
+  r.headers.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  return r
+}
+
 const preflight = (env) =>
   cors(new Response(null, { status: 204 }), env)
 
@@ -65,14 +84,14 @@ function setSessionCookie(token) {
     `session=${token}`,
     'HttpOnly',
     'Secure',
-    'SameSite=Lax',
+    'SameSite=None',
     'Path=/',
   ]
   return attrs.join('; ')
 }
 
 function clearSessionCookie() {
-  return 'session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0'
+  return 'session=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0'
 }
 
 function getCookie(req, name) {
@@ -86,12 +105,18 @@ function getCookie(req, name) {
 // — OAuth endpoints
 async function handleGoogleLogin(req, env) {
   const state = crypto.randomUUID()
+  const { searchParams } = new URL(req.url)
+  const redirect = searchParams.get('redirect') || env.REDIRECT_AFTER_LOGIN || 'http://localhost:8054'
+  
+  // Store the redirect URL in the state parameter
+  const stateData = b64url(JSON.stringify({ state, redirect }))
+  
   const params = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID,
     redirect_uri: `${new URL(req.url).origin}/auth/callback/google`,
     response_type: 'code',
     scope: 'openid email profile',
-    state
+    state: stateData
   })
   return Response.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`, 302)
 }
@@ -150,7 +175,19 @@ async function handleGoogleCallback(req, env) {
     const jwt = await signJWT({ user }, env.JWT_SECRET)
     console.log('JWT created successfully')
 
-    const redirectUrl = env.REDIRECT_AFTER_LOGIN || 'http://localhost:8054'
+    // Get the original redirect URL from state parameter
+    const state = searchParams.get('state')
+    let redirectUrl = env.REDIRECT_AFTER_LOGIN || 'http://localhost:8054'
+    
+    if (state) {
+      try {
+        const stateData = JSON.parse(atob(state.replace(/-/g, '+').replace(/_/g, '/')))
+        redirectUrl = stateData.redirect || redirectUrl
+      } catch (e) {
+        console.log('Failed to parse state:', e.message)
+      }
+    }
+    
     const res = new Response(null, {
       status: 302,
       headers: {
@@ -249,25 +286,84 @@ async function handleUser(req, env) {
   const token = getCookie(req, 'session')
   if (!token) {
     console.log('No session cookie found')
-    return cors(new Response('Unauthorized - No session cookie', { status: 401 }), env)
+    return corsDynamic(new Response('Unauthorized - No session cookie', { status: 401 }), req, env)
   }
   
   const data = await verifyJWT(token, env.JWT_SECRET)
   if (!data?.user) {
     console.log('Invalid JWT or no user data')
-    return cors(new Response('Unauthorized - Invalid JWT', { status: 401 }), env)
+    return corsDynamic(new Response('Unauthorized - Invalid JWT', { status: 401 }), req, env)
   }
   
-  return cors(new Response(JSON.stringify(data.user), { 
+  return corsDynamic(new Response(JSON.stringify(data.user), { 
     status: 200, 
     headers: { 'content-type': 'application/json' }
-  }), env)
+  }), req, env)
 }
 
 async function handleLogout(req, env) {
   const res = new Response(null, { status: 204 })
   res.headers.append('Set-Cookie', clearSessionCookie())
   return cors(res, env)
+}
+
+// — Sync functionality
+async function handleGetItems(req, env) {
+  try {
+    const token = getCookie(req, 'session')
+    if (!token) {
+      return corsDynamic(new Response('Unauthorized', { status: 401 }), req, env)
+    }
+    
+    const data = await verifyJWT(token, env.JWT_SECRET)
+    if (!data?.user) {
+      return corsDynamic(new Response('Unauthorized', { status: 401 }), req, env)
+    }
+    
+    const userId = data.user.sub
+    const itemsKey = `user:${userId}:items`
+    
+    const items = await env.WANT_KV.get(itemsKey, { type: 'json' })
+    
+    return corsDynamic(new Response(JSON.stringify(items || []), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    }), req, env)
+    
+  } catch (error) {
+    console.log('Get items error:', error.message)
+    return corsDynamic(new Response('Server error', { status: 500 }), req, env)
+  }
+}
+
+async function handleSaveItems(req, env) {
+  try {
+    const token = getCookie(req, 'session')
+    if (!token) {
+      return corsDynamic(new Response('Unauthorized', { status: 401 }), req, env)
+    }
+    
+    const data = await verifyJWT(token, env.JWT_SECRET)
+    if (!data?.user) {
+      return corsDynamic(new Response('Unauthorized', { status: 401 }), req, env)
+    }
+    
+    const userId = data.user.sub
+    const itemsKey = `user:${userId}:items`
+    
+    const items = await req.json()
+    
+    await env.WANT_KV.put(itemsKey, JSON.stringify(items))
+    
+    return corsDynamic(new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    }), req, env)
+    
+  } catch (error) {
+    console.log('Save items error:', error.message)
+    return corsDynamic(new Response('Server error', { status: 500 }), req, env)
+  }
 }
 
 // — Extract functionality (from existing extract.js)
@@ -572,9 +668,13 @@ export default {
     if (url.pathname === '/auth/user')          return handleUser(req, env)
     if (url.pathname === '/auth/logout' && req.method === 'POST') return handleLogout(req, env)
 
-    // — Extract routes (existing functionality)
-    if (url.pathname === '/extract') return handleExtract(req, env)
-    if (url.pathname === '/api/parse') return handleExtract(req, env) // Backward compatibility
+               // — Sync routes
+           if (url.pathname === '/api/items' && req.method === 'GET') return handleGetItems(req, env)
+           if (url.pathname === '/api/items' && req.method === 'POST') return handleSaveItems(req, env)
+           
+           // — Extract routes (existing functionality)
+           if (url.pathname === '/extract') return handleExtract(req, env)
+           if (url.pathname === '/api/parse') return handleExtract(req, env) // Backward compatibility
 
     return new Response('Not found', { status: 404 })
   }

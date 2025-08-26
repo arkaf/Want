@@ -38,8 +38,12 @@ async function bootstrapAuth() {
         const user = await res.json();
 
         // Show app UI, set avatar
+        console.log('User authenticated, showing main app');
         document.getElementById('auth-screen').hidden = true;
+        document.getElementById('auth-screen').style.display = 'none';
+        document.getElementById('topbar').style.display = 'block';
         document.getElementById('avatarBtn').hidden = false;
+        document.getElementById('appMain').style.display = 'block';
         const img = document.getElementById('avatarImg');
         img.src = user.avatar || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
         img.alt = user.name || user.email || 'Account';
@@ -55,20 +59,20 @@ async function bootstrapAuth() {
             }
         };
 
-        // continue to your normal app init (load items, etc.)
         return user;
     } catch {
         // Not authenticated → show signup screen
         document.getElementById('auth-screen').hidden = false;
+        document.getElementById('auth-screen').style.display = 'flex';
+        document.getElementById('topbar').style.display = 'none';
         document.getElementById('avatarBtn').hidden = true;
 
         document.getElementById('btn-google').onclick = () => {
             const redirect = location.href;
-            location.href = `${AUTH_BASE}/auth/login/google?redirect=${encodeURIComponent(redirect)}`;
-        };
-        document.getElementById('btn-apple').onclick = () => {
-            const redirect = location.href;
-            location.href = `${AUTH_BASE}/auth/login/apple?redirect=${encodeURIComponent(redirect)}`;
+            // Force hard refresh after OAuth callback by adding cache-busting parameter
+            const cacheBuster = `?cb=${Date.now()}`;
+            const finalRedirect = redirect.includes('?') ? `${redirect}&cb=${Date.now()}` : `${redirect}${cacheBuster}`;
+            location.href = `${AUTH_BASE}/auth/login/google?redirect=${encodeURIComponent(finalRedirect)}`;
         };
         
         return null;
@@ -246,6 +250,7 @@ export class WantApp {
     }
     
     async initAfterAuth(user) {
+        console.log('Initializing app after authentication for user:', user.email);
         // Wire UI immediately when DOM is ready
         this.wireUI();
         this.enableGlobalPaste();
@@ -272,7 +277,8 @@ export class WantApp {
             if (s !== null && s !== "") this.selectedStore = s;
         } catch {}
         
-        // Load items from local IndexedDB
+        // Sync from cloud and load items
+        await this.db.syncFromCloud();
         await this.renderGridFiltered();
         
         // Process hash for add.html redirects
