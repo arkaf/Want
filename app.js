@@ -5,12 +5,137 @@ import { ItemManager } from './src/data/items.js';
 import { renderCard } from './src/ui/renderCard.js';
 import { isProbablyUrl } from './src/utils/url.js';
 import { openSheet, closeSheet } from './src/ui/bottomSheet.js';
+import { EXTRACT_ENDPOINT } from './src/config.js';
+
+// Auth configuration
+const AUTH_BASE = 'https://want-extract.fiorearcangelodesign.workers.dev';
+
+// Track pending adds to prevent duplicates
+
 
 // Constants & utils
 const PASTE_DEBOUNCE_MS = 120;
 
 function domainFrom(url) {
     try { return new URL(url).hostname.replace(/^www\./,''); } catch { return ""; }
+}
+
+// Auth helper functions
+function isStandalonePWA() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function isIOS() { 
+    return /iPhone|iPad|iPod/i.test(navigator.userAgent); 
+}
+
+async function bootstrapAuth() {
+    try {
+        const res = await fetch(`${AUTH_BASE}/auth/user`, {
+            credentials: 'include'
+        });
+        if (!res.ok) throw 0;
+        const user = await res.json();
+
+        // Show app UI, set avatar
+        document.getElementById('auth-screen').hidden = true;
+        document.getElementById('avatarBtn').hidden = false;
+        const img = document.getElementById('avatarImg');
+        img.src = user.avatar || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+        img.alt = user.name || user.email || 'Account';
+
+        // Wire avatar click (sheet vs popover)
+        const btn = document.getElementById('avatarBtn');
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            if (isIOS() && isStandalonePWA()) {
+                openAccountSheet(user);
+            } else {
+                openAccountPopover(btn, user);
+            }
+        };
+
+        // continue to your normal app init (load items, etc.)
+        return user;
+    } catch {
+        // Not authenticated → show signup screen
+        document.getElementById('auth-screen').hidden = false;
+        document.getElementById('avatarBtn').hidden = true;
+
+        document.getElementById('btn-google').onclick = () => {
+            const redirect = location.href;
+            location.href = `${AUTH_BASE}/auth/login/google?redirect=${encodeURIComponent(redirect)}`;
+        };
+        document.getElementById('btn-apple').onclick = () => {
+            const redirect = location.href;
+            location.href = `${AUTH_BASE}/auth/login/apple?redirect=${encodeURIComponent(redirect)}`;
+        };
+        
+        return null;
+    }
+}
+
+function openAccountSheet(user) {
+    const wrap = document.createElement('div');
+    wrap.className = 'account-sheet';
+    wrap.innerHTML = `
+        <div class="acc-name">${(user.name || user.email || 'Signed in')}</div>
+        <div class="acc-email">${user.email || ''}</div>
+        <div class="acc-divider"></div>
+        <button class="acc-logout" id="acc-logout-sheet">Log out</button>
+    `;
+    wrap.querySelector('#acc-logout-sheet').onclick = async () => {
+        await fetch(`${AUTH_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
+        if (typeof closeSheet === 'function') closeSheet();
+        location.reload();
+    };
+    if (typeof openSheet === 'function') openSheet({ content: wrap, title: 'Account' });
+}
+
+let accountPopoverEl;
+function openAccountPopover(anchorEl, user) {
+    closeAccountPopover();
+    const pop = document.createElement('div');
+    pop.id = 'account-popover';
+    pop.className = 'account-popover';
+    pop.setAttribute('role', 'dialog');
+    pop.innerHTML = `
+        <div class="acc-name">${(user.name || user.email || 'Signed in').replace(/[<>&]/g, s => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[s]))}</div>
+        <div class="acc-email">${(user.email || '').replace(/[<>&]/g, s => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[s]))}</div>
+        <div class="acc-divider"></div>
+        <button class="acc-logout" id="acc-logout-pop">Log out</button>
+    `;
+    document.body.appendChild(pop);
+    positionPopoverBelow(pop, anchorEl);
+    document.getElementById('acc-logout-pop').onclick = async () => {
+        await fetch(`${AUTH_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
+        closeAccountPopover();
+        location.reload();
+    };
+    const onDocClick = (e) => { if (!pop.contains(e.target) && e.target !== anchorEl) closeAccountPopover(); };
+    const onKey = (e) => { if (e.key === 'Escape') closeAccountPopover(); };
+    setTimeout(() => {
+        document.addEventListener('click', onDocClick, { capture: true });
+        document.addEventListener('keydown', onKey);
+        pop._cleanup = () => {
+            document.removeEventListener('click', onDocClick, { capture: true });
+            document.removeEventListener('keydown', onKey);
+        };
+    });
+    accountPopoverEl = pop;
+}
+
+function closeAccountPopover() { 
+    accountPopoverEl?._cleanup?.(); 
+    accountPopoverEl?.remove(); 
+    accountPopoverEl = null; 
+}
+
+function positionPopoverBelow(pop, anchorEl) {
+    const r = anchorEl.getBoundingClientRect();
+    pop.style.position = 'absolute';
+    pop.style.top = `${r.bottom + 8 + window.scrollY}px`;
+    pop.style.left = `${Math.min(window.scrollX + r.left, window.scrollX + window.innerWidth - pop.offsetWidth - 12)}px`;
 }
 
 
@@ -108,6 +233,19 @@ export class WantApp {
     }
 
     async init() {
+        // Bootstrap authentication first
+        const user = await bootstrapAuth();
+        
+        if (!user) {
+            // User is not authenticated, stop here
+            return;
+        }
+        
+        // User is authenticated, continue with normal app initialization
+        await this.initAfterAuth(user);
+    }
+    
+    async initAfterAuth(user) {
         // Wire UI immediately when DOM is ready
         this.wireUI();
         this.enableGlobalPaste();
@@ -115,6 +253,12 @@ export class WantApp {
         
         // Initialize database
         await this.db.init();
+        
+        // Clear cache on app start to ensure fresh data
+        if (localStorage.getItem('clearCache') !== 'true') {
+            await this.db.clearAllItems();
+            localStorage.setItem('clearCache', 'true');
+        }
         
         // Guard duplicate IDs forever
         ['openAddBtn','addItemBtn','urlInput','addForm'].forEach(id => {
@@ -209,7 +353,11 @@ export class WantApp {
         const u = new URLSearchParams(location.search).get('url');
         if (u) {
             const url = decodeURIComponent(u.trim());
-            if (isProbablyUrl(url)) this.handleUrlPaste(url);
+            if (isProbablyUrl(url)) {
+                // Clear query params immediately to prevent duplicate processing
+                history.replaceState(null, '', location.pathname);
+                this.handleUrlPaste(url);
+            }
         }
     }
 
@@ -611,6 +759,12 @@ export class WantApp {
         });
     }
 
+    // Refresh store tags with current items
+    async refreshStoreTags() {
+        const items = await this.itemManager.getAllItems();
+        this.renderStoreTags(items);
+    }
+
     async renderGridFiltered() {
         const items = await this.itemManager.getAllItems();
         this.items = items; // Store items in instance
@@ -639,18 +793,25 @@ export class WantApp {
         const title = item.title || domain;
         const original = item.originalImage || "";
         const proxied = item.image || (original ? this.proxiedImage(original) : "");
-        const fallback = this.getDefaultImage(domain);
+        
+        // For optimistic cards, use skeleton instead of favicon
+        const fallback = item._optimistic ? "" : this.getDefaultImage(domain);
+        
+        // Use skeleton placeholder for optimistic cards with no image
+        const imageContent = item._optimistic && !proxied ? 
+            '<div class="card-image-skeleton"></div>' :
+            `<img 
+                src="${this.escapeHtml(proxied || fallback)}" 
+                alt="${this.escapeHtml(title)}" 
+                referrerpolicy="no-referrer"
+                data-original="${this.escapeHtml(original)}"
+                onerror="if(this.dataset.fallback!=='1' && this.dataset.original){ this.dataset.fallback='1'; this.src=this.dataset.original; } else { this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjFGNUY5Ii8+CjxwYXRoIGQ9Ik0xMDAgNzBDODguOTU0MyA3MCA4MCA3OC45NTQzIDgwIDkwQzgwIDEwMS4wNDYgODguOTU0MyAxMTAgMTAwIDExMEMxMTEuMDQ2IDExMCAxMjAgMTAxLjA0NiAxMjAgOTBDMTIwIDc4Ljk1NDMgMTExLjA0NiA3MCAxMDAgNzBaIiBmaWxsPSIjQ0JELTQ2NiIvPgo8cGF0aCBkPSJNMTYwIDE2MEg0MEM0MCAxNjAgNDAgMTYwIDQwIDE2MFYxMjBDNDAgMTIwIDQwIDEyMCA0MCAxMjBIMTYwQzE2MCAxMjAgMTYwIDEyMCAxNjAgMTIwVjE2MFoiIGZpbGw9IiNDQkQtNDY2Ii8+Cjwvc3ZnPgo='; }"
+            />`;
 
         return `
             <a class="card" href="${this.escapeHtml(item.url)}" target="_blank" rel="noopener" data-item-id="${item.id}">
                 <div class="img-wrap">
-                    <img 
-                        src="${this.escapeHtml(proxied || fallback)}" 
-                        alt="${this.escapeHtml(title)}" 
-                        referrerpolicy="no-referrer"
-                        data-original="${this.escapeHtml(original)}"
-                        onerror="if(this.dataset.fallback!=='1' && this.dataset.original){ this.dataset.fallback='1'; this.src=this.dataset.original; } else { this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjFGNUY5Ii8+CjxwYXRoIGQ9Ik0xMDAgNzBDODguOTU0MyA3MCA4MCA3OC45NTQzIDgwIDkwQzgwIDEwMS4wNDYgODguOTU0MyAxMTAgMTAwIDExMEMxMTEuMDQ2IDExMCAxMjAgMTAxLjA0NiAxMjAgOTBDMTIwIDc4Ljk1NDMgMTExLjA0NiA3MCAxMDAgNzBaIiBmaWxsPSIjQ0JELTQ2NiIvPgo8cGF0aCBkPSJNMTYwIDE2MEg0MEM0MCAxNjAgNDAgMTYwIDQwIDE2MFYxMjBDNDAgMTIwIDQwIDEyMCA0MCAxMjBIMTYwQzE2MCAxMjAgMTYwIDEyMCAxNjAgMTIwVjE2MFoiIGZpbGw9IiNDQkQtNDY2Ii8+Cjwvc3ZnPgo='; }"
-                    />
+                    ${imageContent}
                     <button class="card-more" aria-label="More options" aria-haspopup="menu" aria-expanded="false" data-id="${item.id}">
                         <!-- three dots (vertical) -->
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -687,29 +848,19 @@ export class WantApp {
         
         if (item._optimistic) {
             card.classList.add('optimistic');
-            // Add shimmer effect for loading state
-            card.style.opacity = '0.7';
+            // Shimmer effect is handled by CSS, no inline opacity needed
         }
         
         // Insert at the beginning of the grid
         grid.insertBefore(card, grid.firstChild);
         
-        // Bind more menu events for the new card
-        const moreBtn = card.querySelector('.card-more');
-        if (moreBtn) {
-            moreBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                // Use the existing more menu logic
-                const moreMenu = document.getElementById('moreMenu');
-                const moreBackdrop = document.getElementById('moreBackdrop');
-                if (moreMenu && moreBackdrop) {
-                    moreMenu.hidden = false;
-                    moreBackdrop.hidden = false;
-                    moreMenu.dataset.itemId = item.id;
-                }
-            });
+        // Update store tags when adding first item
+        if (this.items.length === 0) {
+            // This is the first item, update store tags immediately
+            this.renderStoreTags([item]);
         }
+        
+        // More button events are handled by delegation in setupMoreMenu()
     }
 
     getDefaultImage(domain) {
@@ -809,25 +960,32 @@ export class WantApp {
         this.showPreviewLoading();
 
         try {
-            // Use local metadata extraction (Worker disabled)
-            const meta = this.extractBasicMetadata(url);
-            const host = this.hostnameOf(url);
+            // Use the new Worker endpoint for robust extraction
+            const res = await fetch(`${EXTRACT_ENDPOINT}?url=${encodeURIComponent(url)}`, {
+                mode: 'cors',
+                credentials: 'omit',
+                redirect: 'follow',
+                headers: { 'Accept': 'application/json' },
+            });
             
-            console.log('Preview data (local):', { ...meta, domain: host });
-
-            // Update preview
-            this.updatePreview({ ...meta, domain: host });
-            this.showPreview();
-
-            // Update advanced fields if they're visible
-            if (!document.getElementById('advanced').classList.contains('hidden')) {
-                this.setAdvancedFormValues(meta);
+            if (res.ok) {
+                const meta = await res.json();
+                console.log('Preview data (Worker):', meta);
+                this.updatePreview(meta);
+                this.showPreview();
+                
+                // Update advanced fields if they're visible
+                if (!document.getElementById('advanced').classList.contains('hidden')) {
+                    this.setAdvancedFormValues(meta);
+                }
+            } else {
+                throw new Error(`Worker returned ${res.status}`);
             }
         } catch (error) {
             console.error('Error handling URL input:', error);
             // Show fallback preview
             const fallbackMeta = this.extractBasicMetadata(url);
-            this.updatePreview({ ...fallbackMeta, domain: this.hostnameOf(url) });
+            this.updatePreview(fallbackMeta);
             this.showPreview();
         }
     }
@@ -895,6 +1053,7 @@ export class WantApp {
             title: title,
             image: fallbackImg,
             price: '',
+            domain: host,
         };
     }
 
@@ -1049,34 +1208,20 @@ export class WantApp {
         });
     }
 
-    showToast(message, type = 'success', options = {}) {
-        const toast = document.getElementById('toast');
-        toast.textContent = message;
-        toast.style.display = 'block';
-        
-        if (type === 'error') {
-            toast.style.background = '#000000';
-        } else {
-            toast.style.background = '#000000';
+    // Utility: toast
+    showToast(msg) {
+        let t = document.getElementById('toast');
+        if (!t) {
+            t = document.createElement('div');
+            t.id = 'toast';
+            t.setAttribute('aria-live', 'polite');
+            t.setAttribute('aria-atomic', 'true');
+            document.body.appendChild(t);
         }
-
-        // Add action button if provided
-        if (options.action) {
-            const actionBtn = document.createElement('button');
-            actionBtn.textContent = options.action.label;
-            actionBtn.className = 'toast-action';
-            actionBtn.onclick = options.action.onClick;
-            toast.appendChild(actionBtn);
-        }
-
-        setTimeout(() => {
-            toast.style.display = 'none';
-            // Clean up action button
-            const actionBtn = toast.querySelector('.toast-action');
-            if (actionBtn) {
-                actionBtn.remove();
-            }
-        }, 5000); // Longer timeout for actions
+        t.textContent = msg;
+        t.classList.add('show');
+        clearTimeout(this._toastTimer);
+        this._toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
     }
 
     setupMoreMenu() {
@@ -1124,6 +1269,7 @@ export class WantApp {
             const btn = e.target.closest?.('.card-more');
             if (!btn) return;
             e.preventDefault();
+            e.stopPropagation();
             openMoreMenuFor(btn, btn.dataset.id);
         });
 
@@ -1154,7 +1300,7 @@ export class WantApp {
                 
                 if (!item) { 
                     console.error('Item not found for ID:', moreCurrentId);
-                    this.showToast('Item not found', 'error');
+                    this.showToast('Item not found');
                     closeMoreMenu(); 
                     return; 
                 }
@@ -1173,6 +1319,27 @@ export class WantApp {
                     } catch(error) { 
                         console.log('Share cancelled or failed:', error);
                         // Don't show error for user cancellation
+                    }
+                }
+
+                if (action === 'copy') {
+                    const url = item.url;
+                    try {
+                        if (navigator.clipboard?.writeText) {
+                            await navigator.clipboard.writeText(url);
+                        } else {
+                            // Fallback
+                            const ta = document.createElement('textarea');
+                            ta.value = url;
+                            document.body.appendChild(ta);
+                            ta.select();
+                            document.execCommand('copy');
+                            ta.remove();
+                        }
+                        this.showToast('Link copied to clipboard');
+                    } catch (e) {
+                        this.showToast('Could not copy link');
+                        console.error('Copy failed', e);
                     }
                 }
 
@@ -1232,14 +1399,43 @@ export class WantApp {
     }
 
     processHashAdd() {
-        const hash = window.location.hash;
-        const match = hash.match(/#add=(.+)$/);
-        if (match) {
-            const url = decodeURIComponent(match[1]);
-            // Clean hash
-            history.replaceState(null, '', './');
-            // Add the item
-            this.addItemDirectly(url);
+        const h = location.hash || '';
+        if (!h.startsWith('#add=')) return;
+        try {
+            const payload = JSON.parse(decodeURIComponent(h.slice(5)));
+            // Clear hash immediately to avoid re-processing on refresh/back
+            history.replaceState(null, '', location.pathname);
+
+            const url = (payload.url || '').trim();
+            if (!url) return;
+
+            // Prevent duplicate add while another is running
+            if (!window.pendingAdds) window.pendingAdds = new Set();
+            if (window.pendingAdds.has(url)) return;
+            window.pendingAdds.add(url);
+
+            // Show optimistic card (no opacity, just shimmer)
+            const tempId = this.addOptimisticCard(url);
+
+            // Enrich + write once
+            (async () => {
+                try {
+                    // If server already sent title/image/price, prefer them, otherwise enrich again if needed
+                    const final = await this.itemManager.upsertFromMetaOrFetch(payload);
+                    await this.db.addOrUpdateItem(final); // single write
+                    this.reconcileCard(tempId, final);
+                    this.showToast('Item added');
+                } catch (e) {
+                    console.error('hash add failed', e);
+                    this.reconcileCard(tempId, null, e);
+                    this.showToast('Failed to add item');
+                } finally {
+                    window.pendingAdds.delete(url);
+                }
+            })();
+        } catch (e) {
+            console.warn('Invalid #add payload', e);
+            history.replaceState(null, '', location.pathname);
         }
     }
 
@@ -1260,6 +1456,13 @@ export class WantApp {
         };
         this.renderItemCard(card); // existing renderer should handle "loading" skeleton by checking _optimistic or empty image
         return id;
+    }
+
+    removeOptimisticCardByUrl(url) {
+        const card = document.querySelector(`.card.optimistic[data-url="${CSS.escape(url)}"]`);
+        if (card) {
+            card.remove();
+        }
     }
 
     // Fetch meta from Worker (DISABLED - using local extraction)
@@ -1289,23 +1492,37 @@ export class WantApp {
             this.removeItemCard(tempId);
             this.renderItemCard(finalObj);
         }
+        
+        // Refresh store tags to include the new item
+        this.refreshStoreTags();
     }
 
     // Main direct-add flow
     async addItemDirectly(url) {
-        if (this.addInFlight) return;      // guard
-        this.addInFlight = true;
-        const tempId = this.addOptimisticCard(url);
+        if (!window.pendingAdds) window.pendingAdds = new Set();
+        if (window.pendingAdds.has(url)) {
+            console.log('URL already being added, skipping');
+            return;
+        }
+        window.pendingAdds.add(url);
+
         try {
-            const item = await this.itemManager.createItemFromUrl(url); // this should also persist
-            this.reconcileCard(tempId, item);
-            this.showToast('Item added successfully');
-        } catch (e) {
-            console.error("addItemDirectly failed", e);
-            this.reconcileCard(tempId, null, e);
-            this.showToast(e?.message === 'Item already exists' ? 'Item already exists' : 'Failed to add item');
+            // Create optimistic card first
+            const tempId = this.addOptimisticCard(url);
+            
+            // Fetch metadata and create item
+            const item = await this.itemManager.createItemFromUrl(url);
+            if (item) {
+                // Replace optimistic card with real card
+                this.reconcileCard(tempId, item);
+                this.showToast('Item added successfully');
+            }
+        } catch (error) {
+            console.error('addItemDirectly failed', error);
+            this.removeOptimisticCardByUrl(url);
+            this.showToast(error?.message === 'Item already exists' ? 'Item already exists' : 'Failed to add item');
         } finally {
-            this.addInFlight = false;
+            window.pendingAdds.delete(url);
         }
     }
 
@@ -1323,20 +1540,75 @@ export class WantApp {
             // Update the card content in-place
             const titleEl = card.querySelector('.card-title');
             const priceEl = card.querySelector('.card-price');
-            const siteEl = card.querySelector('.card-site');
-            const imgEl = card.querySelector('.card-image');
+            const domainEl = card.querySelector('.card-domain');
+            const imgWrap = card.querySelector('.img-wrap');
             
             if (titleEl) titleEl.textContent = obj.title || '';
             if (priceEl) priceEl.textContent = obj.price || '';
-            if (siteEl) siteEl.textContent = obj.site || '';
-            if (imgEl && obj.image) {
-                imgEl.src = this.proxiedImage(obj.image);
-                imgEl.style.display = 'block';
+            if (domainEl) domainEl.textContent = obj.domain || '';
+            
+            // Handle image replacement (skeleton → real image)
+            if (obj.image && imgWrap) {
+                const skeleton = imgWrap.querySelector('.card-image-skeleton');
+                if (skeleton) {
+                    // Replace skeleton with real image
+                    skeleton.remove();
+                    const img = document.createElement('img');
+                    img.className = 'card-image';
+                    img.alt = obj.title || '';
+                    img.referrerPolicy = 'no-referrer';
+                    img.dataset.original = obj.originalImage || '';
+                    img.onerror = function() {
+                        if (this.dataset.fallback !== '1' && this.dataset.original) {
+                            this.dataset.fallback = '1';
+                            this.src = this.dataset.original;
+                        } else {
+                            this.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjFGNUY5Ii8+CjxwYXRoIGQ9Ik0xMDAgNzBDODguOTU0MyA3MCA4MCA3OC45NTQzIDgwIDkwQzgwIDEwMS4wNDYgODguOTU0MyAxMTAgMTAwIDExMEMxMTEuMDQ2IDExMCAxMjAgMTAxLjA0NiAxMjAgOTBDMTIwIDc4Ljk1NDMgMTExLjA0NiA3MCAxMDAgNzBaIiBmaWxsPSIjQ0JELTQ2NiIvPgo8cGF0aCBkPSJNMTYwIDE2MEg0MEM0MCAxNjAgNDAgMTYwIDQwIDE2MFYxMjBDNDAgMTIwIDQwIDEyMCA0MCAxMjBIMTYwQzE2MCAxMjAgMTYwIDEyMCAxNjAgMTIwVjE2MFoiIGZpbGw9IiNDQkQtNDY2Ii8+Cjwvc3ZnPgo=';
+                        }
+                    };
+                    
+                    // Wait for image to load before clearing optimistic state
+                    const onReady = () => {
+                        // image is rendered; card can be fully interactive
+                        card.classList.remove('optimistic');
+                        card.style.opacity = '';
+                        card.style.pointerEvents = '';
+                        img.removeEventListener('load', onReady);
+                    };
+                    img.addEventListener('load', onReady, { once: true });
+                    img.src = this.proxiedImage(obj.image);
+                    imgWrap.insertBefore(img, imgWrap.firstChild);
+                } else {
+                    // Update existing image
+                    const imgEl = imgWrap.querySelector('.card-image');
+                    if (imgEl) {
+                        const onReady = () => {
+                            // image is rendered; card can be fully interactive
+                            card.classList.remove('optimistic');
+                            card.style.opacity = '';
+                            card.style.pointerEvents = '';
+                            imgEl.removeEventListener('load', onReady);
+                        };
+                        imgEl.addEventListener('load', onReady, { once: true });
+                        imgEl.src = this.proxiedImage(obj.image);
+                    }
+                }
+            } else {
+                // No image to wait for; exit optimistic immediately
+                card.classList.remove('optimistic');
+                card.style.opacity = '';
+                card.style.pointerEvents = '';
             }
             
-            // Remove optimistic styling
+            // Remove optimistic styling and ensure proper data-id
             card.classList.remove('optimistic');
             card.dataset.itemId = obj.id;
+            
+            // Update the more button data-id as well
+            const moreBtn = card.querySelector('.card-more');
+            if (moreBtn) {
+                moreBtn.dataset.id = obj.id;
+            }
             
             return true; // Successfully updated
         }

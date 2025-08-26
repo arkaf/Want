@@ -112,6 +112,20 @@ class WantDB {
         await this.db.delete(this.storeName, id);
     }
 
+    async clearAllItems() {
+        if (!this.db) await this.init();
+        const items = await this.getAllItems();
+        for (const item of items) {
+            await this.deleteItem(item.id);
+        }
+        console.log('All items cleared from database');
+    }
+
+    async addOrUpdateItem(item) {
+        // Alias for addItem which already handles upserting
+        return await this.addItem(item);
+    }
+
     async clearAll() {
         if (!this.db) await this.init();
         

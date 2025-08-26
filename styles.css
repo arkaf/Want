@@ -189,6 +189,7 @@ h1 {
     display: block;
     text-decoration: none;
     color: #000;
+    position: relative;
 }
 
 .img-wrap {
@@ -222,6 +223,7 @@ h1 {
     border: none;
     color: #111;
     cursor: pointer;
+    z-index: 3;          /* above skeleton/image */
 }
 
 .card-more:active {
@@ -262,8 +264,33 @@ h1 {
 
 /* Optimistic card styling (loading state) */
 .card.optimistic {
-    opacity: 0.7;
+    /* No opacity - only shimmer conveys loading */
     transition: opacity 0.3s ease;
+}
+
+/* shimmer may cover only the image, never block touches */
+.img-wrap--loading,
+.img-wrap--loading * {
+    pointer-events: none;
+}
+
+/* ensure the overflow button is always clickable and above shimmer */
+.card .overflow-btn,
+.card .more-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 5;
+    pointer-events: auto;
+}
+
+/* menu should accept clicks only when opened */
+.card-menu { 
+    pointer-events: none; 
+    z-index: 9999; 
+}
+.card-menu.active { 
+    pointer-events: all; 
 }
 
 .card.optimistic .img-wrap {
@@ -303,6 +330,24 @@ h1 {
     100% { background-position: 200% 0; }
 }
 
+/* Skeleton placeholder for loading images */
+.card-image-skeleton {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 12px;
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    pointer-events: none;
+}
+
+/* Ensure any shimmer/overlay never steals taps */
+.skeleton,
+.shimmer,
+.card .image-placeholder {
+    pointer-events: none;
+}
+
 /* Overflow menu (iOS-style) */
 .menu-backdrop {
     position: fixed;
@@ -329,6 +374,13 @@ h1 {
     border-radius: 14px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
     overflow: hidden;
+}
+
+.overflow-menu {
+    position: absolute;
+    right: 8px;
+    top: 36px;
+    z-index: 4;
 }
 
 .menu[hidden] {
@@ -573,40 +625,24 @@ body.sheet-open {
 }
 
 /* Toast */
-.toast {
+#toast {
     position: fixed;
-    bottom: 2rem;
     left: 50%;
-    transform: translateX(-50%);
-    background: #000000;
-    color: white;
-    padding: 0.75rem 1.5rem;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    z-index: 1001;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    max-width: 90vw;
+    bottom: 24px;
+    transform: translateX(-50%) translateY(16px);
+    background: rgba(0,0,0,.85);
+    color: #fff;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease;
+    z-index: 9999;
 }
-
-.toast-action {
-    background: white;
-    color: #000000;
-    border: none;
-    padding: 0.25rem 0.75rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background-color 0.2s;
-    white-space: nowrap;
-}
-
-.toast-action:hover {
-    background: #f5f5f5;
+#toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
 }
 
 /* Responsive design */
@@ -871,3 +907,65 @@ body.sheet-open {
 .header-divider, .bottom-divider {
     display: none !important;
 }
+
+/* Signup screen */
+.auth-screen {
+    display: grid;
+    place-items: center;
+    padding: 32px 16px;
+    min-height: calc(100vh - env(safe-area-inset-bottom));
+}
+.auth-brand {
+    font-family: "Playfair Display", serif;
+    font-size: 42px;
+    line-height: 1;
+    margin-top: 32px;
+}
+.auth-subtitle {
+    margin-top: 8px;
+    color: rgba(0,0,0,.65);
+}
+
+.auth-btn {
+    width: min(420px, 88vw);
+    height: 52px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,.12);
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-weight: 600;
+    margin-top: 18px;
+    box-shadow: 0 1px 0 rgba(0,0,0,.02);
+}
+.auth-btn-google .gmark { width: 18px; height: 18px; background: url(/assets/google.svg) no-repeat center/contain; }
+.auth-btn-apple  .amark { width: 18px; height: 18px; background: url(/assets/apple.svg)  no-repeat center/contain; }
+
+/* Avatar in navbar */
+.avatar-btn {
+    width: 32px; height: 32px;
+    padding: 0; border: 0; background: transparent;
+    border-radius: 999px; overflow: hidden;
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-left: 8px;
+}
+.avatar-btn img { width: 24px; height: 24px; border-radius: 50%; display: block; }
+
+/* Account popover */
+.account-popover {
+    position: absolute;
+    min-width: 220px;
+    max-width: 280px;
+    background: #fff;
+    border: 1px solid rgba(0,0,0,.08);
+    border-radius: 14px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.14);
+    z-index: 10000;
+}
+
+.acc-name { font-size: 16px; font-weight: 700; color: #111; padding: 12px 14px; }
+.acc-email { font-size: 13px; color: rgba(0,0,0,.6); padding: 0 14px 12px; }
+.acc-divider { height: 1px; background: rgba(0,0,0,.08); margin: 6px 0; }
+.acc-logout { width: 100%; text-align: left; padding: 12px 14px; background: transparent; border: 0; color: #d00; font-weight: 600; cursor: pointer; }

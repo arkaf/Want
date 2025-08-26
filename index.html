@@ -46,9 +46,28 @@
                         <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                 </button>
+                <button id="avatarBtn" class="avatar-btn" aria-label="Account" hidden>
+                    <img id="avatarImg" alt="" />
+                </button>
             </div>
         </div>
     </header>
+
+    <!-- Signup screen -->
+    <div id="auth-screen" class="auth-screen" hidden>
+        <div class="auth-brand">Want</div>
+        <div class="auth-subtitle">Your smarter shopping list.</div>
+
+        <button id="btn-google" class="auth-btn auth-btn-google">
+            <span class="gmark"></span>
+            Sign up with Google
+        </button>
+
+        <button id="btn-apple" class="auth-btn auth-btn-apple">
+            <span class="amark"></span>
+            Sign up with Apple
+        </button>
+    </div>
 
     <main id="appMain" class="main">
         <div id="storeTags" class="store-tags" role="tablist" aria-label="Stores"></div>
@@ -84,6 +103,7 @@
     <div id="moreMenuBackdrop" class="menu-backdrop" hidden></div>
     <div id="moreMenu" class="menu" role="menu" hidden>
         <button type="button" class="menu-item" data-action="share" role="menuitem">Share</button>
+        <button type="button" class="menu-item" data-action="copy" role="menuitem">Copy link</button>
         <button type="button" class="menu-item danger" data-action="delete" role="menuitem">Delete</button>
     </div>
 

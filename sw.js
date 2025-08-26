@@ -1,5 +1,5 @@
 // Service Worker for Want PWA
-const CACHE_NAME = 'want-v58';
+const CACHE_NAME = 'want-v71';
 const urlsToCache = [
     '/',
     '/index.html',
@@ -27,24 +27,51 @@ self.addEventListener('install', event => {
 // Fetch event - serve from cache when offline
 self.addEventListener('fetch', event => {
     const u = new URL(event.request.url);
+    
+                    // Bypass cache for add flow and parser
+        if (
+            u.pathname.startsWith('/add') ||
+            u.pathname.startsWith('/extract') ||
+            u.pathname.startsWith('/extract') ||   // alias, if still used
+            u.hash.startsWith('#add=')
+        ) {
+            event.respondWith((async () => {
+                try {
+                    return await fetch(event.request, { cache: 'no-store' });
+                } catch (e) {
+                    return new Response('Network error', { status: 502 });
+                }
+            })());
+            return;
+        }
+    
     if (u.pathname.startsWith('/api/')) {
         event.respondWith(fetch(event.request, { cache: 'no-store' }));
         return;
     }
     
-    event.respondWith(
-        caches.match(event.request)
-            .then(response => {
-                // Return cached version or fetch from network
-                return response || fetch(event.request);
-            })
-            .catch(() => {
-                // Return offline page for navigation requests
-                if (event.request.mode === 'navigate') {
-                    return caches.match('/index.html');
-                }
-            })
-    );
+    event.respondWith((async () => {
+        try {
+            // Cache-first strategy for static assets
+            const cache = await caches.open(CACHE_NAME);
+            const cached = await cache.match(event.request);
+            if (cached) return cached;
+            
+            const fresh = await fetch(event.request);
+            // Only cache requests with supported schemes
+            if (event.request.url.startsWith('http')) {
+                cache.put(event.request, fresh.clone());
+            }
+            return fresh;
+        } catch (e) {
+            // Return offline page for navigation requests
+            if (event.request.mode === 'navigate') {
+                const offlinePage = await caches.match('/index.html');
+                if (offlinePage) return offlinePage;
+            }
+            return new Response('Offline', { status: 503 });
+        }
+    })());
 });
 
 // Activate event - clean up old caches

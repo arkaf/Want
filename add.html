@@ -45,10 +45,8 @@
         // Import and initialize the quick add app
         import { QuickAdd } from './add.js';
         
-        // Create app instance when DOM is loaded
-        document.addEventListener('DOMContentLoaded', () => {
-            window.quickAdd = new QuickAdd();
-        });
+        // Single instance — do NOT wrap in DOMContentLoaded or create another elsewhere
+        window.quickAdd = new QuickAdd();
     </script>
 </body>
 </html>
