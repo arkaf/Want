@@ -20,16 +20,33 @@
         <meta name="apple-mobile-web-app-title" content="Want">
         <meta name="theme-color" content="#ffffff">
     
-    <link rel="stylesheet" href="styles.css?v=2">
+    <link rel="stylesheet" href="styles.css?v=12">
     <script>
+        // Supabase environment variables
+        window.__ENV = {
+            SUPABASE_URL: "https://djmvsehwlypqhcqtkman.supabase.co",
+            SUPABASE_ANON: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRqbXZzZWh3bHlwcWhjcXRrbWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYzMjIzNDksImV4cCI6MjA3MTg5ODM0OX0.1HYABAtbL4vaScem32AxMWdq9s2T0VoNR_TMyn-Uqjk"
+        };
+        
         // Fix for CORS issues when running locally
         if (window.location.protocol === 'file:') {
             console.log('Running locally - some PWA features may be limited');
         }
+        
+        // Clear service worker cache in development
+        if (window.location.hostname === 'localhost') {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(registrations => {
+                    registrations.forEach(registration => {
+                        registration.unregister();
+                    });
+                });
+            }
+        }
     </script>
 </head>
 <body>
-    <header id="topbar" class="topbar">
+    <header id="topbar" class="topbar" style="display: none;">
         <div class="topbar-inner">
             <div class="header-left">
                 <img src="assets/want.svg" alt="Want" class="logo" />
@@ -105,26 +122,48 @@
         
 
     <script src="vendor/idb.min.js"></script>
-    <script src="db.js?v=2"></script>
+    <script src="db.js?v=12"></script>
     <script type="module">
         // Import and initialize the app
-        import { WantApp } from './app.js?v=2';
+        import { WantApp } from './app.js?v=12';
         
         // Create app instance when DOM is loaded
         document.addEventListener('DOMContentLoaded', () => {
             // Force hard refresh if cache-busting parameter is present
             const urlParams = new URLSearchParams(window.location.search);
             if (urlParams.has('cb')) {
+                // Clear all caches aggressively
+                if ('caches' in window) {
+                    caches.keys().then(names => {
+                        names.forEach(name => {
+                            caches.delete(name);
+                        });
+                    });
+                }
+                
+                // Clear service worker cache
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(registrations => {
+                        registrations.forEach(registration => {
+                            registration.unregister();
+                        });
+                    });
+                }
+                
                 // Remove cache-busting parameter and reload
-                const newUrl = window.location.pathname + window.location.search.replace(/[?&]cb=\d+/, '').replace(/^\?&/, '?').replace(/^\?$/, '');
+                const newUrl = window.location.pathname + window.location.search.replace(/[?&]cb=\d+/, '').replace(/[?&]v=\d+/, '').replace(/^\?&/, '?').replace(/^\?$/, '');
                 window.history.replaceState({}, document.title, newUrl);
+                
+                // Force reload with fresh cache
+                window.location.reload(true);
+                return;
             }
             
             window.wantApp = new WantApp();
         });
         
-        // Register service worker and force update
-        if ('serviceWorker' in navigator) {
+        // Register service worker only in production to avoid dev reload loops
+        if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
             navigator.serviceWorker.register('sw.js').then(reg => {
                 // Force SKIP_WAITING if a waiting worker exists
                 if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });

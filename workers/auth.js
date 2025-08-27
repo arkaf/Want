@@ -12,18 +12,57 @@ export interface Env {
 
 import { encode as b64url } from 'https://esm.sh/base64-url@3.0.2'
 
+// — CORS Configuration
+const DEV_ORIGINS = new Set([
+  'http://localhost:8054',
+  'http://localhost:5173', // if you also use Vite
+  'http://localhost:3000', // common dev port
+]);
+
+const PROD_ORIGINS = new Set([
+  'https://arkaf.github.io',
+  'https://want.fiorearcangelodesign.workers.dev',
+  'https://fiorearcangelodesign.workers.dev',
+  // add your custom domain if any
+]);
+
+function corsHeaders(origin?: string) {
+  const allow =
+    origin && (DEV_ORIGINS.has(origin) || PROD_ORIGINS.has(origin))
+      ? origin
+      : '';
+  return {
+    'Access-Control-Allow-Origin': allow || 'https://arkaf.github.io', // safe default
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Headers': 'content-type, authorization',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Vary': 'Origin',
+  };
+}
+
+function isDevOrigin(origin?: string) {
+  return !!origin && DEV_ORIGINS.has(origin);
+}
+
+function sameSiteCookieAttrs(origin?: string) {
+  // For localhost we must NOT use SameSite=None;Secure (None requires Secure)
+  return isDevOrigin(origin)
+    ? 'SameSite=Lax; Path=/; HttpOnly'
+    : 'SameSite=None; Secure; Path=/; HttpOnly';
+}
+
 // — Utility: CORS
-function cors(res: Response, env: Env) {
+function cors(res: Response, origin?: string) {
   const r = new Response(res.body, res)
-  r.headers.set('Access-Control-Allow-Origin', env.ALLOWED_ORIGIN)
-  r.headers.set('Vary', 'Origin')
-  r.headers.set('Access-Control-Allow-Credentials', 'true')
-  r.headers.set('Access-Control-Allow-Headers', 'Content-Type')
-  r.headers.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  const headers = corsHeaders(origin)
+  Object.entries(headers).forEach(([key, value]) => {
+    r.headers.set(key, value)
+  })
   return r
 }
-const preflight = (env: Env) =>
-  cors(new Response(null, { status: 204 }), env)
+
+const preflight = (origin?: string) =>
+  cors(new Response(null, { status: 204 }), origin)
 
 // — Utility: sign/verify JWT (HS256)
 async function signJWT(payload: object, secret: string, expSec = 60 * 60 * 24 * 30) {
@@ -51,21 +90,39 @@ async function verifyJWT(token: string, secret: string) {
 }
 
 // — Cookies
-function setSessionCookie(token: string) {
-  const attrs = [
-    `session=${token}`,
+function setSessionCookie(token: string, origin?: string) {
+  const baseAttrs = [
+    `want_session=${token}`,
     'HttpOnly',
-    'Secure',
-    'SameSite=Lax',
     'Path=/',
-    // optional: domain=… when on custom domain
-    // 'Max-Age=2592000' // 30 days
+    `Max-Age=${60 * 60 * 24 * 7}`, // 7 days
   ]
-  return attrs.join('; ')
+  
+  // Add SameSite and Secure based on origin
+  if (isDevOrigin(origin)) {
+    baseAttrs.push('SameSite=Lax')
+  } else {
+    baseAttrs.push('SameSite=None', 'Secure')
+  }
+  
+  return baseAttrs.join('; ')
 }
 
-function clearSessionCookie() {
-  return 'session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0'
+function clearSessionCookie(origin?: string) {
+  const baseAttrs = [
+    'want_session=',
+    'HttpOnly',
+    'Path=/',
+    'Max-Age=0',
+  ]
+  
+  if (isDevOrigin(origin)) {
+    baseAttrs.push('SameSite=Lax')
+  } else {
+    baseAttrs.push('SameSite=None', 'Secure')
+  }
+  
+  return baseAttrs.join('; ')
 }
 
 function getCookie(req: Request, name: string) {
@@ -89,6 +146,8 @@ async function handleGoogleLogin(req: Request, env: Env) {
 async function handleGoogleCallback(req: Request, env: Env) {
   const { searchParams } = new URL(req.url)
   const code = searchParams.get('code')
+  const origin = req.headers.get('Origin') || undefined
+  
   if (!code) return new Response('Missing code', { status: 400 })
 
   // Exchange code for tokens
@@ -121,8 +180,13 @@ async function handleGoogleCallback(req: Request, env: Env) {
   }
   const jwt = await signJWT({ user }, env.JWT_SECRET)
 
-  const res = Response.redirect(env.REDIRECT_AFTER_LOGIN, 302)
-  res.headers.append('Set-Cookie', setSessionCookie(jwt))
+  // Determine redirect URL based on origin
+  const redirectUrl = origin && (DEV_ORIGINS.has(origin) || PROD_ORIGINS.has(origin))
+    ? origin
+    : env.REDIRECT_AFTER_LOGIN || 'https://arkaf.github.io';
+
+  const res = Response.redirect(redirectUrl, 302)
+  res.headers.append('Set-Cookie', setSessionCookie(jwt, origin))
   return res
 }
 
@@ -144,6 +208,7 @@ async function handleAppleCallback(req: Request, env: Env) {
   const formData = await req.formData()
   const code = formData.get('code') as string
   const state = formData.get('state') as string
+  const origin = req.headers.get('Origin') || undefined
   
   if (!code) return new Response('Missing code', { status: 400 })
 
@@ -201,29 +266,51 @@ async function handleAppleCallback(req: Request, env: Env) {
   
   const jwt = await signJWT({ user }, env.JWT_SECRET)
 
-  const res = Response.redirect(env.REDIRECT_AFTER_LOGIN, 302)
-  res.headers.append('Set-Cookie', setSessionCookie(jwt))
+  // Determine redirect URL based on origin
+  const redirectUrl = origin && (DEV_ORIGINS.has(origin) || PROD_ORIGINS.has(origin))
+    ? origin
+    : env.REDIRECT_AFTER_LOGIN || 'https://arkaf.github.io';
+
+  const res = Response.redirect(redirectUrl, 302)
+  res.headers.append('Set-Cookie', setSessionCookie(jwt, origin))
   return res
 }
 
 async function handleUser(req: Request, env: Env) {
-  const token = getCookie(req, 'session')
-  if (!token) return cors(new Response('Unauthorized', { status: 401 }), env)
+  const origin = req.headers.get('Origin') || undefined
+  const token = getCookie(req, 'want_session')
+  
+  if (!token) {
+    return cors(new Response('Unauthorized', { status: 401 }), origin)
+  }
+  
   const data = await verifyJWT(token, env.JWT_SECRET)
-  if (!data?.user) return cors(new Response('Unauthorized', { status: 401 }), env)
-  return cors(new Response(JSON.stringify(data.user), { status: 200, headers: { 'content-type': 'application/json' }}), env)
+  if (!data?.user) {
+    return cors(new Response('Unauthorized', { status: 401 }), origin)
+  }
+  
+  return cors(
+    new Response(JSON.stringify(data.user), { 
+      status: 200, 
+      headers: { 'content-type': 'application/json' }
+    }), 
+    origin
+  )
 }
 
 async function handleLogout(req: Request, env: Env) {
+  const origin = req.headers.get('Origin') || undefined
   const res = new Response(null, { status: 204 })
-  res.headers.append('Set-Cookie', clearSessionCookie())
-  return cors(res, env)
+  res.headers.append('Set-Cookie', clearSessionCookie(origin))
+  return cors(res, origin)
 }
 
 export default {
   async fetch(req: Request, env: Env) {
     const url = new URL(req.url)
-    if (req.method === 'OPTIONS') return preflight(env)
+    const origin = req.headers.get('Origin') || undefined
+    
+    if (req.method === 'OPTIONS') return preflight(origin)
 
     // — Auth routes
     if (url.pathname === '/auth/login/google')   return handleGoogleLogin(req, env)
@@ -235,6 +322,6 @@ export default {
     if (url.pathname === '/auth/logout' && req.method === 'POST') return handleLogout(req, env)
 
     // keep existing endpoints like /extract … (call your current router here)
-    return new Response('Not found', { status: 404 })
+    return new Response('Not found', { status: 404, headers: corsHeaders(origin) })
   }
 }

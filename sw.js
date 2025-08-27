@@ -1,5 +1,5 @@
 // Service Worker for Want PWA
-const CACHE_NAME = 'want-v72';
+const CACHE_NAME = 'want-v74';
 const urlsToCache = [
     '/',
     '/index.html',
@@ -65,8 +65,8 @@ self.addEventListener('fetch', event => {
             if (cached) return cached;
             
             const fresh = await fetch(event.request);
-            // Only cache requests with supported schemes
-            if (event.request.url.startsWith('http')) {
+            // Only cache GET requests with supported schemes
+            if (event.request.method === 'GET' && event.request.url.startsWith('http')) {
                 cache.put(event.request, fresh.clone());
             }
             return fresh;

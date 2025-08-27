@@ -645,6 +645,18 @@ body.sheet-open {
     transform: translateX(-50%) translateY(0);
 }
 
+#toast.error {
+    background: rgba(221, 0, 0, 0.85);
+}
+
+#toast.success {
+    background: rgba(0, 0, 0, 0.85);
+}
+
+#toast.warning {
+    background: rgba(255, 153, 0, 0.85);
+}
+
 /* Responsive design */
 @media (min-width: 768px) {
     .items-grid {
@@ -931,6 +943,19 @@ body.sheet-open {
 .auth-screen ~ header {
     display: none !important;
 }
+
+/* Ensure main app is visible when authenticated */
+body.authenticated .auth-screen {
+    display: none !important;
+}
+
+body.authenticated .topbar {
+    display: block !important;
+}
+
+body.authenticated .main {
+    display: block !important;
+}
 .auth-logo {
     width: 120px;
     height: auto;
@@ -966,7 +991,61 @@ body.sheet-open {
 .auth-btn:active {
     background: #222;
 }
+
+.auth-btn:disabled {
+    background: #666;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
 .auth-btn-google .gmark { width: 18px; height: 18px; background: url(/assets/google.svg) no-repeat center/contain; }
+
+.auth-btn-retry {
+    background: #666;
+    margin-top: 12px;
+}
+
+.auth-btn-retry:hover {
+    background: #555;
+}
+
+/* Authentication loading spinner */
+.auth-loading-spinner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+}
+
+.auth-loading-spinner .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid #fff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* Authentication error message */
+.auth-error {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: #fee;
+    border: 1px solid #fcc;
+    border-radius: 8px;
+    color: #c33;
+    font-size: 14px;
+    max-width: min(420px, 88vw);
+    animation: fadeIn 0.3s ease-in;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
 
 /* Avatar in navbar */
 .avatar-btn {
@@ -977,6 +1056,21 @@ body.sheet-open {
     margin-left: 8px;
 }
 .avatar-btn img { width: 24px; height: 24px; border-radius: 50%; display: block; }
+
+/* Fallback avatar with initials */
+.avatar-fallback {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    font-size: 10px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
 
 /* Account popover */
 .account-popover {
@@ -993,4 +1087,23 @@ body.sheet-open {
 .acc-name { font-size: 16px; font-weight: 700; color: #111; padding: 12px 14px; }
 .acc-email { font-size: 13px; color: rgba(0,0,0,.6); padding: 0 14px 12px; }
 .acc-divider { height: 1px; background: rgba(0,0,0,.08); margin: 6px 0; }
-.acc-logout { width: 100%; text-align: left; padding: 12px 14px; background: transparent; border: 0; color: #d00; font-weight: 600; cursor: pointer; }
+.acc-logout { 
+    width: 100%; 
+    text-align: left; 
+    padding: 12px 14px; 
+    background: transparent; 
+    border: 0; 
+    color: #d00; 
+    font-weight: 600; 
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.acc-logout:hover {
+    background: rgba(221, 0, 0, 0.05);
+}
+
+.acc-logout:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}

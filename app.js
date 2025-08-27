@@ -1,4 +1,4 @@
-// Firebase functionality will be accessed via window.db
+// Supabase functionality will be accessed via window.db
 
 // Import the new modular architecture
 import { ItemManager } from './src/data/items.js';
@@ -6,9 +6,11 @@ import { renderCard } from './src/ui/renderCard.js';
 import { isProbablyUrl } from './src/utils/url.js';
 import { openSheet, closeSheet } from './src/ui/bottomSheet.js';
 import { EXTRACT_ENDPOINT } from './src/config.js';
+import { withStableBust } from './src/utils/cacheBust.js';
 
-// Auth configuration
-const AUTH_BASE = 'https://want-extract.fiorearcangelodesign.workers.dev';
+// Import Supabase auth and items API
+import { supabase } from './supabaseClient.js';
+import { loadItems, addItem, deleteItem, subscribeItems } from './itemsApi.js';
 
 // Track pending adds to prevent duplicates
 
@@ -29,54 +31,175 @@ function isIOS() {
     return /iPhone|iPad|iPod/i.test(navigator.userAgent); 
 }
 
-async function bootstrapAuth() {
-    try {
-        const res = await fetch(`${AUTH_BASE}/auth/user`, {
-            credentials: 'include'
-        });
-        if (!res.ok) throw 0;
-        const user = await res.json();
+// Supabase authentication functions
+export async function authInit() {
+  // Debounce auth state updates to prevent login/home bouncing
+  let renderQueued = false;
+  
+  function renderOnceStable() {
+    if (renderQueued) return;
+    renderQueued = true;
+    queueMicrotask(() => {
+      renderQueued = false;
+      // Render logic will be handled by the auth state change
+    });
+  }
 
-        // Show app UI, set avatar
-        console.log('User authenticated, showing main app');
-        document.getElementById('auth-screen').hidden = true;
-        document.getElementById('auth-screen').style.display = 'none';
-        document.getElementById('topbar').style.display = 'block';
-        document.getElementById('avatarBtn').hidden = false;
-        document.getElementById('appMain').style.display = 'block';
-        const img = document.getElementById('avatarImg');
-        img.src = user.avatar || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-        img.alt = user.name || user.email || 'Account';
-
-        // Wire avatar click (sheet vs popover)
-        const btn = document.getElementById('avatarBtn');
-        btn.onclick = (e) => {
-            e.stopPropagation();
-            if (isIOS() && isStandalonePWA()) {
-                openAccountSheet(user);
-            } else {
-                openAccountPopover(btn, user);
-            }
-        };
-
-        return user;
-    } catch {
-        // Not authenticated → show signup screen
-        document.getElementById('auth-screen').hidden = false;
-        document.getElementById('auth-screen').style.display = 'flex';
-        document.getElementById('topbar').style.display = 'none';
-        document.getElementById('avatarBtn').hidden = true;
-
-        document.getElementById('btn-google').onclick = () => {
-            const redirect = location.href;
-            // Force hard refresh after OAuth callback by adding cache-busting parameter
-            const cacheBuster = `?cb=${Date.now()}`;
-            const finalRedirect = redirect.includes('?') ? `${redirect}&cb=${Date.now()}` : `${redirect}${cacheBuster}`;
-            location.href = `${AUTH_BASE}/auth/login/google?redirect=${encodeURIComponent(finalRedirect)}`;
-        };
-        
-        return null;
+  // Listen to auth state changes
+  const unsub = supabase.auth.onAuthStateChange((_event, session) => {
+    if (session?.user) {
+      showAppForUser(session.user);
+    } else {
+      showLoginScreen();
     }
+    renderOnceStable();
+  });
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.user) showAppForUser(session.user); 
+  else showLoginScreen();
+}
+
+export function loginWithGoogle() {
+  return supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: location.origin + location.pathname, // e.g. https://arkaf.github.io/Want/
+      queryParams: { prompt: 'select_account' },
+    },
+  });
+}
+
+// Apple: wire later when Apple is ready in dashboard
+export function loginWithApple() {
+  return supabase.auth.signInWithOAuth({
+    provider: 'apple',
+    options: { redirectTo: location.origin + location.pathname },
+  });
+}
+
+export async function logout() {
+  await supabase.auth.signOut();
+  // clear any local caches if present
+  if (window.__unsubItems) window.__unsubItems();
+  
+  // Clear in-memory state
+  if (window.wantApp) {
+    window.wantApp.items = [];
+  }
+  
+  // Hard bounce to the root to kill any stale state from SW/router
+  location.replace('/');
+}
+
+async function showAppForUser(user) {
+  // User is authenticated - show app
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('topbar').style.display = 'block';
+  document.getElementById('avatarBtn').hidden = false;
+  document.getElementById('appMain').style.display = 'block';
+  
+  // Set avatar with error handling for 429 rate limits
+  const img = document.getElementById('avatarImg');
+  const avatarBtn = document.getElementById('avatarBtn');
+  
+  if (user.user_metadata?.avatar_url) {
+    // Try to load the avatar image
+    img.src = user.user_metadata.avatar_url;
+    img.style.display = 'block';
+    
+    // Handle image load errors (like 429 rate limits)
+    img.onerror = () => {
+      console.warn('Avatar failed to load, using fallback');
+      img.style.display = 'none';
+      // Create a fallback avatar with user's initials
+      const initials = (user.user_metadata?.full_name || user.email || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+      avatarBtn.innerHTML = `<div class="avatar-fallback">${initials}</div>`;
+    };
+    
+    // Handle successful load
+    img.onload = () => {
+      // Clear any fallback
+      avatarBtn.innerHTML = '';
+      avatarBtn.appendChild(img);
+    };
+  } else {
+    // No avatar URL - use fallback immediately
+    img.style.display = 'none';
+    const initials = (user.user_metadata?.full_name || user.email || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    avatarBtn.innerHTML = `<div class="avatar-fallback">${initials}</div>`;
+  }
+  
+  img.alt = user.user_metadata?.full_name || user.email || 'Account';
+
+  // Wire avatar click
+  const btn = document.getElementById('avatarBtn');
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    if (isIOS() && isStandalonePWA()) {
+      openAccountSheet(user);
+    } else {
+      openAccountPopover(btn, user);
+    }
+  };
+
+  // 1) Load initial items
+  try {
+    const items = await loadItems();
+    if (window.wantApp && window.wantApp.renderItems) {
+      window.wantApp.renderItems(items);
+    } else {
+      console.warn('WantApp instance not ready yet');
+    }
+  } catch (error) {
+    console.error('Failed to load items:', error);
+  }
+
+  // 2) Realtime sync
+  if (window.__unsubItems) window.__unsubItems();
+  window.__unsubItems = subscribeItems(
+    (row) => {
+      if (window.wantApp && window.wantApp.onItemAdded) {
+        window.wantApp.onItemAdded(row);
+      }
+    },
+    (row) => {
+      if (window.wantApp && window.wantApp.onItemDeleted) {
+        window.wantApp.onItemDeleted(row.id);
+      }
+    }
+  );
+}
+
+function showLoginScreen() {
+  // Not authenticated - show login screen
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('topbar').style.display = 'none';
+  document.getElementById('avatarBtn').hidden = true;
+  document.getElementById('appMain').style.display = 'none';
+  
+  // Hide the entire topbar completely
+  const topbar = document.getElementById('topbar');
+  if (topbar) {
+    topbar.style.display = 'none';
+  }
+
+  // Google login with loading spinner
+  document.getElementById('btn-google').onclick = () => {
+    const btn = document.getElementById('btn-google');
+    
+    // Show loading state
+    btn.innerHTML = `
+      <div class="auth-loading-spinner">
+        <div class="spinner"></div>
+      </div>
+      <span>Connecting...</span>
+    `;
+    btn.disabled = true;
+    
+    // Start OAuth flow
+    loginWithGoogle();
+  };
 }
 
 function openAccountSheet(user) {
@@ -89,9 +212,8 @@ function openAccountSheet(user) {
         <button class="acc-logout" id="acc-logout-sheet">Log out</button>
     `;
     wrap.querySelector('#acc-logout-sheet').onclick = async () => {
-        await fetch(`${AUTH_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
+        await logout();
         if (typeof closeSheet === 'function') closeSheet();
-        location.reload();
     };
     if (typeof openSheet === 'function') openSheet({ content: wrap, title: 'Account' });
 }
@@ -112,9 +234,8 @@ function openAccountPopover(anchorEl, user) {
     document.body.appendChild(pop);
     positionPopoverBelow(pop, anchorEl);
     document.getElementById('acc-logout-pop').onclick = async () => {
-        await fetch(`${AUTH_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
+        await logout();
         closeAccountPopover();
-        location.reload();
     };
     const onDocClick = (e) => { if (!pop.contains(e.target) && e.target !== anchorEl) closeAccountPopover(); };
     const onKey = (e) => { if (e.key === 'Escape') closeAccountPopover(); };
@@ -225,6 +346,7 @@ export class WantApp {
         this.selectedStore = null; // null = All
         this.pasteTimer = null;
         this.addInFlight = false; // NEW: prevents double-firing
+        this.items = []; // Initialize items array
         
         // Wait for DOM to be ready before initializing
         if (document.readyState === 'loading') {
@@ -237,33 +359,16 @@ export class WantApp {
     }
 
     async init() {
-        // Bootstrap authentication first
-        const user = await bootstrapAuth();
+        // Initialize Supabase auth
+        await authInit();
         
-        if (!user) {
-            // User is not authenticated, stop here
-            return;
-        }
-        
-        // User is authenticated, continue with normal app initialization
-        await this.initAfterAuth(user);
-    }
-    
-    async initAfterAuth(user) {
-        console.log('Initializing app after authentication for user:', user.email);
         // Wire UI immediately when DOM is ready
         this.wireUI();
         this.enableGlobalPaste();
         this.hydrateFromQueryParams();
         
-        // Initialize database
+        // Initialize database (keep for local caching if needed)
         await this.db.init();
-        
-        // Clear cache on app start to ensure fresh data
-        if (localStorage.getItem('clearCache') !== 'true') {
-            await this.db.clearAllItems();
-            localStorage.setItem('clearCache', 'true');
-        }
         
         // Guard duplicate IDs forever
         ['openAddBtn','addItemBtn','urlInput','addForm'].forEach(id => {
@@ -277,10 +382,6 @@ export class WantApp {
             if (s !== null && s !== "") this.selectedStore = s;
         } catch {}
         
-        // Sync from cloud and load items
-        await this.db.syncFromCloud();
-        await this.renderGridFiltered();
-        
         // Process hash for add.html redirects
         this.processHashAdd();
         
@@ -292,6 +393,8 @@ export class WantApp {
             window.history.replaceState({}, document.title, window.location.pathname);
         }
     }
+    
+
 
     wireUI() {
         const openAddBtn = document.getElementById('openAddBtn');        // "+ Add"
@@ -608,6 +711,27 @@ export class WantApp {
         });
     }
 
+    // Real-time sync methods for Supabase
+    onItemAdded(item) {
+        // Check if item already exists to avoid duplicates
+        const existingItem = this.items.find(i => i.id === item.id);
+        if (existingItem) return;
+        
+        // Add to local array
+        this.items.unshift(item);
+        
+        // Re-render the grid
+        this.renderItems(this.items);
+    }
+
+    onItemDeleted(itemId) {
+        // Remove from local array
+        this.items = this.items.filter(item => item.id !== itemId);
+        
+        // Re-render the grid
+        this.renderItems(this.items);
+    }
+
 
 
     normalizeUrl(str) {
@@ -640,15 +764,16 @@ export class WantApp {
         const proxied = original ? this.proxiedImage(original) : '';
         const fallback = `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
 
+        const createdAt = Date.now();
         return {
-            id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
+            id: crypto?.randomUUID ? crypto.randomUUID() : String(createdAt),
             url,
             title: meta?.title || host,
             price: meta?.price || '',
-            image: proxied || fallback,
+            image: withStableBust(proxied || fallback, createdAt), // stable cache bust
             originalImage: original, // keep for onerror fallback in render
             domain: this.normalizedDomainFrom(url),
-            createdAt: Date.now(),
+            createdAt,
         };
     }
 
@@ -902,8 +1027,8 @@ export class WantApp {
 
     async deleteItem(id) {
         try {
-            // Delete from local database only
-            await this.itemManager.deleteItem(id);
+            // Delete from Supabase
+            await deleteItem(id);
             
             // Update local items array
             this.items = this.items.filter(item => item.id !== id);
@@ -1511,13 +1636,30 @@ export class WantApp {
             return;
         }
         window.pendingAdds.add(url);
+        
+        // Guard against duplicate items
+        const adding = new Set();
+        if (adding.has(url)) return;
+        adding.add(url);
 
         try {
             // Create optimistic card first
             const tempId = this.addOptimisticCard(url);
             
-            // Fetch metadata and create item
-            const item = await this.itemManager.createItemFromUrl(url);
+            // Fetch metadata from worker
+            const response = await fetch(`${EXTRACT_ENDPOINT}?url=${encodeURIComponent(url)}`);
+            if (!response.ok) throw new Error('Failed to fetch metadata');
+            
+            const metadata = await response.json();
+            
+            // Add item to Supabase
+            const item = await addItem({
+                url: url,
+                title: metadata.title || '',
+                image: metadata.image || '',
+                price: metadata.price || ''
+            });
+            
             if (item) {
                 // Replace optimistic card with real card
                 this.reconcileCard(tempId, item);
@@ -1529,6 +1671,7 @@ export class WantApp {
             this.showToast(error?.message === 'Item already exists' ? 'Item already exists' : 'Failed to add item');
         } finally {
             window.pendingAdds.delete(url);
+            adding.delete(url);
         }
     }
 
