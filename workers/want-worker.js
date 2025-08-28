@@ -379,6 +379,19 @@ function json(data, status = 200) {
   })
 }
 
+function pickFromJsonLd(blocks) {
+  const product = blocks.find(b => (b["@type"] || "").toLowerCase() === "product");
+  if (!product) return { title: "", image: "", price: "", currency: "" };
+
+  const offers = Array.isArray(product.offers) ? product.offers[0] : product.offers || {};
+  return {
+    title: product.name || product.title || "",
+    image: Array.isArray(product.image) ? product.image[0] : product.image || "",
+    price: offers.price || offers.lowPrice || "",
+    currency: offers.priceCurrency || ""
+  };
+}
+
 function fromJsonLd(html) {
   const matches = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)
   if (!matches) return null
@@ -386,15 +399,31 @@ function fromJsonLd(html) {
   for (const match of matches) {
     try {
       const jsonStr = match.replace(/<script[^>]*>/, '').replace(/<\/script>/, '')
-      const data = JSON.parse(jsonStr)
+      let data = JSON.parse(jsonStr)
       
+      // Handle nested arrays/objects
+      if (Array.isArray(data)) {
+        data = data.find(item => item && typeof item === 'object')
+      }
+      
+      if (!data || typeof data !== 'object') continue
+      
+      // Look for Product type
       if (data['@type'] === 'Product' || data['@type'] === 'http://schema.org/Product') {
-        return {
-          title: data.name || data.title,
-          image: data.image || (Array.isArray(data.image) ? data.image[0] : null),
-          price: data.offers?.price || data.offers?.['@graph']?.[0]?.price || data.aggregateRating?.ratingValue
+        const result = pickFromJsonLd([data])
+        if (result.title || result.image || result.price) {
+          return result
         }
       }
+      
+      // Handle @graph arrays
+      if (data['@graph'] && Array.isArray(data['@graph'])) {
+        const result = pickFromJsonLd(data['@graph'])
+        if (result.title || result.image || result.price) {
+          return result
+        }
+      }
+      
     } catch (e) {
       continue
     }
@@ -402,16 +431,55 @@ function fromJsonLd(html) {
   return null
 }
 
+function normalizeCurrency(price, currency) {
+  if (!price) return price
+  
+  // Normalize currency symbols
+  const currencyMap = {
+    '£': 'GBP',
+    '€': 'EUR',
+    '$': 'USD',
+    '¥': 'JPY'
+  }
+  
+  if (currency) {
+    return `${price} ${currency}`
+  }
+  
+  // Try to detect currency from price string
+  for (const [symbol, code] of Object.entries(currencyMap)) {
+    if (price.includes(symbol)) {
+      return price.replace(symbol, `${symbol} `)
+    }
+  }
+  
+  return price
+}
+
 function fromMeta(html) {
+  // Enhanced meta tag extraction with fallbacks
   const title = html.match(/<meta[^>]*property="og:title"[^>]*content="([^"]*)"/i)?.[1] ||
                 html.match(/<meta[^>]*name="twitter:title"[^>]*content="([^"]*)"/i)?.[1] ||
+                html.match(/<meta[^>]*name="title"[^>]*content="([^"]*)"/i)?.[1] ||
                 html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]
   
   const image = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]*)"/i)?.[1] ||
-                html.match(/<meta[^>]*name="twitter:image"[^>]*content="([^"]*)"/i)?.[1]
+                html.match(/<meta[^>]*name="twitter:image"[^>]*content="([^"]*)"/i)?.[1] ||
+                html.match(/<meta[^>]*property="image"[^>]*content="([^"]*)"/i)?.[1] ||
+                html.match(/<link[^>]*rel="image_src"[^>]*href="([^"]*)"/i)?.[1]
   
-  const price = html.match(/<meta[^>]*property="product:price:amount"[^>]*content="([^"]*)"/i)?.[1] ||
-                html.match(/<meta[^>]*property="og:price:amount"[^>]*content="([^"]*)"/i)?.[1]
+  // Enhanced price extraction with multiple patterns
+  let price = html.match(/<meta[^>]*property="product:price:amount"[^>]*content="([^"]*)"/i)?.[1] ||
+              html.match(/<meta[^>]*property="og:price:amount"[^>]*content="([^"]*)"/i)?.[1] ||
+              html.match(/<meta[^>]*name="twitter:data1"[^>]*content="([^"]*)"/i)?.[1] || // Zara uses this
+              html.match(/<meta[^>]*property="price"[^>]*content="([^"]*)"/i)?.[1]
+  
+  // Extract currency if available
+  const currency = html.match(/<meta[^>]*property="product:price:currency"[^>]*content="([^"]*)"/i)?.[1] ||
+                   html.match(/<meta[^>]*property="og:price:currency"[^>]*content="([^"]*)"/i)?.[1]
+  
+  // Normalize price with currency
+  price = normalizeCurrency(price, currency)
   
   return { title, image, price }
 }
@@ -422,14 +490,16 @@ async function fromSiteSpecific(html, pageUrl) {
     const titleMatch = html.match(/<span[^>]*id="productTitle"[^>]*>([^<]*)<\/span>/i)
     const title = titleMatch?.[1]?.trim()
     
-    // Amazon image extraction with multiple patterns
+    // Enhanced Amazon image extraction
     let image = null
     const imagePatterns = [
       /data-old-hires="([^"]*)"/i,
       /landingImage":"([^"]*)"/i,
       /"large":"([^"]*)"/i,
       /"hiRes":"([^"]*)"/i,
-      /data-a-dynamic-image="([^"]*)"/i
+      /data-a-dynamic-image="([^"]*)"/i,
+      /"mainImage":"([^"]*)"/i,
+      /"heroImage":"([^"]*)"/i
     ]
     
     for (const pattern of imagePatterns) {
@@ -454,23 +524,72 @@ async function fromSiteSpecific(html, pageUrl) {
       image = upgradeAmazonImage(image)
     }
     
-    // Amazon price extraction
-    const priceMatch = html.match(/<span[^>]*class="[^"]*price[^"]*"[^>]*>([^<]*)<\/span>/i) ||
-                      html.match(/<span[^>]*class="[^"]*a-price[^"]*"[^>]*>([^<]*)<\/span>/i)
-    const price = priceMatch?.[1]?.replace(/[^\d.,]/g, '')
+    // Enhanced Amazon price extraction
+    const pricePatterns = [
+      /<span[^>]*class="[^"]*price[^"]*"[^>]*>([^<]*)<\/span>/i,
+      /<span[^>]*class="[^"]*a-price[^"]*"[^>]*>([^<]*)<\/span>/i,
+      /<span[^>]*class="[^"]*a-price-whole[^"]*"[^>]*>([^<]*)<\/span>/i,
+      /<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>([^<]*)<\/span>/i
+    ]
+    
+    let price = null
+    for (const pattern of pricePatterns) {
+      const priceMatch = html.match(pattern)
+      if (priceMatch) {
+        price = priceMatch[1]?.replace(/[^\d.,]/g, '')
+        if (price) break
+      }
+    }
     
     return { title, image, price }
   }
   
   // Zara-specific extraction
   if (pageUrl.hostname.includes('zara.com')) {
-    const titleMatch = html.match(/<h1[^>]*class="[^"]*product-detail-info__product-name[^"]*"[^>]*>([^<]*)<\/h1>/i)
+    const titleMatch = html.match(/<h1[^>]*class="[^"]*product-detail-info__product-name[^"]*"[^>]*>([^<]*)<\/h1>/i) ||
+                       html.match(/<h1[^>]*class="[^"]*product-name[^"]*"[^>]*>([^<]*)<\/h1>/i)
     const title = titleMatch?.[1]?.trim()
     
-    const imageMatch = html.match(/<img[^>]*class="[^"]*product-detail-images__image[^"]*"[^>]*src="([^"]*)"/i)
+    const imageMatch = html.match(/<img[^>]*class="[^"]*product-detail-images__image[^"]*"[^>]*src="([^"]*)"/i) ||
+                       html.match(/<img[^>]*class="[^"]*product-image[^"]*"[^>]*src="([^"]*)"/i)
     const image = imageMatch?.[1]
     
-    const priceMatch = html.match(/<span[^>]*class="[^"]*price__amount[^"]*"[^>]*>([^<]*)<\/span>/i)
+    const priceMatch = html.match(/<span[^>]*class="[^"]*price__amount[^"]*"[^>]*>([^<]*)<\/span>/i) ||
+                       html.match(/<span[^>]*class="[^"]*price-amount[^"]*"[^>]*>([^<]*)<\/span>/i)
+    const price = priceMatch?.[1]?.replace(/[^\d.,]/g, '')
+    
+    return { title, image, price }
+  }
+  
+  // H&M-specific extraction
+  if (pageUrl.hostname.includes('hm.com') || pageUrl.hostname.includes('h&m')) {
+    const titleMatch = html.match(/<h1[^>]*class="[^"]*product-name[^"]*"[^>]*>([^<]*)<\/h1>/i) ||
+                       html.match(/<h1[^>]*class="[^"]*product-title[^"]*"[^>]*>([^<]*)<\/h1>/i)
+    const title = titleMatch?.[1]?.trim()
+    
+    const imageMatch = html.match(/<img[^>]*class="[^"]*product-image[^"]*"[^>]*src="([^"]*)"/i) ||
+                       html.match(/<img[^>]*class="[^"]*main-image[^"]*"[^>]*src="([^"]*)"/i)
+    const image = imageMatch?.[1]
+    
+    const priceMatch = html.match(/<span[^>]*class="[^"]*price[^"]*"[^>]*>([^<]*)<\/span>/i) ||
+                       html.match(/<span[^>]*class="[^"]*product-price[^"]*"[^>]*>([^<]*)<\/span>/i)
+    const price = priceMatch?.[1]?.replace(/[^\d.,]/g, '')
+    
+    return { title, image, price }
+  }
+  
+  // Dover Street Market specific extraction
+  if (pageUrl.hostname.includes('doverstreetmarket.com')) {
+    const titleMatch = html.match(/<h1[^>]*class="[^"]*product-title[^"]*"[^>]*>([^<]*)<\/h1>/i) ||
+                       html.match(/<h1[^>]*class="[^"]*product-name[^"]*"[^>]*>([^<]*)<\/h1>/i)
+    const title = titleMatch?.[1]?.trim()
+    
+    const imageMatch = html.match(/<img[^>]*class="[^"]*product-image[^"]*"[^>]*src="([^"]*)"/i) ||
+                       html.match(/<img[^>]*class="[^"]*main-image[^"]*"[^>]*src="([^"]*)"/i)
+    const image = imageMatch?.[1]
+    
+    const priceMatch = html.match(/<span[^>]*class="[^"]*price[^"]*"[^>]*>([^<]*)<\/span>/i) ||
+                       html.match(/<span[^>]*class="[^"]*product-price[^"]*"[^>]*>([^<]*)<\/span>/i)
     const price = priceMatch?.[1]?.replace(/[^\d.,]/g, '')
     
     return { title, image, price }
@@ -480,19 +599,34 @@ async function fromSiteSpecific(html, pageUrl) {
 }
 
 function extractAnyProductImage(html, pageUrl) {
+  // Enhanced image extraction with lazy loading support
   const imagePatterns = [
+    // Lazy loading images
+    /<img[^>]*data-src="([^"]*)"[^>]*/gi,
+    /<img[^>]*data-lazy="([^"]*)"[^>]*/gi,
+    /<img[^>]*data-original="([^"]*)"[^>]*/gi,
+    // Regular product images
     /<img[^>]*class="[^"]*product[^"]*"[^>]*src="([^"]*)"/gi,
     /<img[^>]*class="[^"]*main[^"]*"[^>]*src="([^"]*)"/gi,
     /<img[^>]*id="[^"]*main[^"]*"[^>]*src="([^"]*)"/gi,
-    /<img[^>]*src="([^"]*)"[^>]*class="[^"]*product[^"]*"/gi
+    /<img[^>]*src="([^"]*)"[^>]*class="[^"]*product[^"]*"/gi,
+    // Generic high-quality images
+    /<img[^>]*src="([^"]*)"[^>]*width="[0-9]{3,}"[^>]*/gi,
+    /<img[^>]*src="([^"]*)"[^>]*height="[0-9]{3,}"[^>]*/gi
   ]
   
   for (const pattern of imagePatterns) {
     const matches = html.matchAll(pattern)
     for (const match of matches) {
       const imageUrl = match[1]
-      if (imageUrl && !imageUrl.includes('placeholder') && !imageUrl.includes('e-love') && 
-          !imageUrl.includes('error') && !imageUrl.includes('default')) {
+      if (imageUrl && 
+          !imageUrl.includes('placeholder') && 
+          !imageUrl.includes('e-love') && 
+          !imageUrl.includes('error') && 
+          !imageUrl.includes('default') &&
+          !imageUrl.includes('logo') &&
+          !imageUrl.includes('icon') &&
+          imageUrl.length > 20) { // Filter out very short URLs (likely icons)
         return imageUrl.startsWith('http') ? imageUrl : new URL(imageUrl, pageUrl.origin).href
       }
     }
@@ -533,6 +667,106 @@ function extractAnyPrice(html) {
   return null
 }
 
+async function fetchWithRetry(target, maxRetries = 3) {
+  const userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+  ]
+
+  const antiBotHeaders = [
+    {
+      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'DNT': '1',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      'Referer': 'https://www.google.com/',
+      'Cookie': `session=${Math.random().toString(36).substring(2)}`
+    },
+    {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept-Language': 'en-GB,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'DNT': '1',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      'Referer': 'https://www.bing.com/',
+      'Cookie': `visitor=${Math.random().toString(36).substring(2)}`
+    }
+  ]
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const headers = antiBotHeaders[attempt % antiBotHeaders.length]
+      
+      const res = await fetch(target, {
+        headers,
+        cf: { cacheTtl: 0, cacheEverything: false }
+      })
+      
+      const html = await res.text()
+      const pageUrl = new URL(res.url)
+      
+      // Check for anti-bot protection
+      const botIndicators = [
+        'Access Denied',
+        'Akamai',
+        'detected',
+        'blocked',
+        'captcha',
+        'robot',
+        'bot protection',
+        'security check'
+      ]
+      
+      const isBlocked = botIndicators.some(indicator => 
+        html.toLowerCase().includes(indicator.toLowerCase())
+      )
+      
+      // If blocked and we have more attempts, retry with different headers
+      if (isBlocked && attempt < maxRetries - 1) {
+        console.log(`Attempt ${attempt + 1}: Bot protection detected, retrying...`)
+        continue
+      }
+      
+      // Check if we got meaningful content
+      const hasContent = html.includes('product') || 
+                        html.includes('amazon') || 
+                        html.includes('zara') ||
+                        html.includes('hm.com') ||
+                        !html.includes('e-love') ||
+                        html.length > 1000
+      
+      if (hasContent) {
+        return { html, pageUrl }
+      }
+      
+    } catch (e) {
+      console.log(`Attempt ${attempt + 1} failed:`, e.message)
+      if (attempt === maxRetries - 1) throw e
+    }
+  }
+  
+  throw new Error('Failed to fetch content after all retries')
+}
+
 async function handleExtract(req, env) {
   const { searchParams } = new URL(req.url)
   const target = searchParams.get('url')
@@ -545,53 +779,18 @@ async function handleExtract(req, env) {
     if (cached) return json(cached)
   }
 
-  // 2) Try multiple fetch attempts with different headers
+  // 2) Fetch with anti-bot retry logic
   let html, pageUrl
-  const userAgents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
-  ]
-
-  for (const userAgent of userAgents) {
-    try {
-      const res = await fetch(target, {
-        headers: {
-          'User-Agent': userAgent,
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'DNT': '1',
-          'Connection': 'keep-alive',
-          'Upgrade-Insecure-Requests': '1',
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'none',
-          'Sec-Fetch-User': '?1',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
-          'Referer': 'https://www.google.com/'
-        },
-        cf: { cacheTtl: 0, cacheEverything: false }
-      })
-      
-      html = await res.text()
-      pageUrl = new URL(res.url)
-      
-      // Check if we got a good response (not a placeholder page)
-      if (html.includes('product') || html.includes('amazon') || !html.includes('e-love')) {
-        break
-      }
-    } catch (e) {
-      continue
-    }
-  }
-
-  if (!html) {
+  try {
+    const result = await fetchWithRetry(target)
+    html = result.html
+    pageUrl = result.pageUrl
+  } catch (error) {
+    console.log('Fetch failed:', error.message)
     return json({ error: 'Failed to fetch content' }, 500)
   }
 
-  // 3) Try JSON-LD Product first
+  // 3) Extract data with priority order
   let data = fromJsonLd(html) || fromMeta(html) || await fromSiteSpecific(html, pageUrl)
 
   // 4) If no image found, try comprehensive image search
@@ -599,56 +798,45 @@ async function handleExtract(req, env) {
     data.image = extractAnyProductImage(html, pageUrl)
   }
 
-  // 5) Amazon-specific fallback for known product IDs
-  if (pageUrl.hostname.includes('amazon.')) {
-    const productId = pageUrl.pathname.match(/\/dp\/([A-Z0-9]+)/)?.[1]
-    if (productId === 'B0BVM1PSYN') {
-      // Known product ID - use the correct image URL and title
-      if (!data?.image) {
-        data.image = 'https://m.media-amazon.com/images/I/71PONvAHqyL._AC_SL1500_.jpg'
-      }
-      if (!data?.title || data.title === 'Amazon.co.uk') {
-        data.title = 'Amazon Basics Bluetooth Wireless On Ear Headphones, 35 Hour Playtime, Black'
-      }
-      if (!data?.price) {
-        data.price = '16.99'
-      }
-    }
-    
-    // For all Amazon products, ensure we have a fallback image if none found
-    if (!data?.image) {
-      data.image = 'https://images-na.ssl-images-amazon.com/images/G/01/gc/designs/livepreview/amazon_dkblue_noto_email_v2016_us-main._CB468775337_.png'
-    }
-  }
-
-  // 6) If no price found, try general price extraction
+  // 5) If no price found, try general price extraction
   if (!data?.price) {
     data.price = extractAnyPrice(html)
   }
 
-  // 7) Handle anti-bot protection (Zara, etc.)
-  if (pageUrl.hostname.includes('zara.com') && (!data?.title || data.title === '&nbsp;' || data.title === 'Zara Product (Bot Protection Active)')) {
+  // 6) Normalize output - ensure we always return the expected structure
+  const normalizedData = {
+    title: data?.title || '',
+    image: data?.image || '',
+    price: data?.price || '',
+    timestamp: Date.now()
+  }
+
+  // 7) Site-specific fallbacks
+  if (pageUrl.hostname.includes('amazon.')) {
+    // Amazon fallback image
+    if (!normalizedData.image) {
+      normalizedData.image = 'https://images-na.ssl-images-amazon.com/images/G/01/gc/designs/livepreview/amazon_dkblue_noto_email_v2016_us-main._CB468775337_.png'
+    }
+  }
+
+  // 8) Handle anti-bot protection for specific sites
+  if (pageUrl.hostname.includes('zara.com') && (!normalizedData.title || normalizedData.title === '&nbsp;')) {
     // Try to extract from URL if possible
     const urlMatch = pageUrl.pathname.match(/\/uk\/en\/([^\/]+)-p\d+\.html/)
     if (urlMatch) {
       const productName = urlMatch[1].replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-      data.title = `${productName} - Zara`
+      normalizedData.title = `${productName} - Zara`
     } else {
-      data.title = 'Zara Product (Bot Protection Active)'
+      normalizedData.title = 'Zara Product'
     }
-    data.image = null
-    data.price = null
   }
 
-  // Add timestamp for cache busting
-  data.timestamp = Date.now()
-
-  // 8) Cache the result (if KV available)
+  // 9) Cache the result (if KV available)
   if (env.WANT_KV) {
-    await env.WANT_KV.put(key, JSON.stringify(data), { expirationTtl: 3600 })
+    await env.WANT_KV.put(key, JSON.stringify(normalizedData), { expirationTtl: 3600 })
   }
 
-  return json(data)
+  return json(normalizedData)
 }
 
 export default {

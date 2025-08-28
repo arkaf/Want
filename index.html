@@ -8,19 +8,25 @@
     
             <!-- Web App Manifest -->
         <link rel="manifest" href="/manifest.webmanifest">
+        
+        <!-- Apple Touch Icons for iOS Home Screen -->
+        <link rel="apple-touch-icon" href="/assets/apple-touch-icon-180.png" sizes="180x180">
+        <link rel="apple-touch-icon" href="/assets/apple-touch-icon-167.png" sizes="167x167">
+        <link rel="apple-touch-icon" href="/assets/apple-touch-icon-152.png" sizes="152x152">
+        <link rel="apple-touch-icon" href="/assets/apple-touch-icon-120.png" sizes="120x120">
 
-        <!-- iOS Home Screen icon -->
-        <link rel="apple-touch-icon" href="/assets/icon-180.png">
-        <!-- (optional extra sizes) -->
-        <link rel="apple-touch-icon" sizes="192x192" href="/assets/icon-192.png">
-        <link rel="apple-touch-icon" sizes="512x512" href="/assets/icon-512.png">
-
-        <meta name="mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-capable" content="yes">
+        <!-- iOS PWA Meta Tags -->
+                   <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="default">
         <meta name="apple-mobile-web-app-title" content="Want">
+        
+        <!-- Favicons -->
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+        
         <meta name="theme-color" content="#ffffff">
     
-    <link rel="stylesheet" href="styles.css?v=12">
+               <link rel="stylesheet" href="styles.css?v=35">
     <script>
         // Supabase environment variables
         window.__ENV = {
@@ -46,6 +52,14 @@
     </script>
 </head>
 <body>
+    <!-- Initial Loading Spinner -->
+    <div id="initial-loader" class="initial-loader">
+        <div class="loader-spinner">
+            <div class="spinner"></div>
+        </div>
+        <div class="loader-text">Loading...</div>
+    </div>
+
     <header id="topbar" class="topbar" style="display: none;">
         <div class="topbar-inner">
             <div class="header-left">
@@ -108,6 +122,8 @@
         </div>
     </div>
 
+
+
     <!-- Toast -->
     <div id="toast" class="toast" style="display: none;"></div>
 
@@ -122,10 +138,10 @@
         
 
     <script src="vendor/idb.min.js"></script>
-    <script src="db.js?v=12"></script>
+    <script src="db.js?v=32"></script>
     <script type="module">
         // Import and initialize the app
-        import { WantApp } from './app.js?v=12';
+                       import { WantApp } from './app.js?v=33';
         
         // Create app instance when DOM is loaded
         document.addEventListener('DOMContentLoaded', () => {

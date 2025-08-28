@@ -45,6 +45,20 @@ export async function authInit() {
     });
   }
 
+  // Function to hide the initial loader
+  function hideInitialLoader() {
+    const loader = document.getElementById('initial-loader');
+    if (loader) {
+      loader.classList.add('hidden');
+      // Remove the loader from DOM after animation
+      setTimeout(() => {
+        if (loader.parentNode) {
+          loader.parentNode.removeChild(loader);
+        }
+      }, 300);
+    }
+  }
+
   // Listen to auth state changes
   const unsub = supabase.auth.onAuthStateChange((_event, session) => {
     if (session?.user) {
@@ -52,29 +66,44 @@ export async function authInit() {
     } else {
       showLoginScreen();
     }
+    hideInitialLoader();
     renderOnceStable();
   });
 
   const { data: { session } } = await supabase.auth.getSession();
-  if (session?.user) showAppForUser(session.user); 
-  else showLoginScreen();
+  if (session?.user) {
+    showAppForUser(session.user);
+  } else {
+    showLoginScreen();
+  }
+  hideInitialLoader();
 }
 
 export function loginWithGoogle() {
+  const redirectTo = window.location.origin; // e.g., http://localhost:8057 in dev, GitHub in prod
+  console.log('OAuth redirectTo =', redirectTo); // keep for debugging
+
   return supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: location.origin + location.pathname, // e.g. https://arkaf.github.io/Want/
-      queryParams: { prompt: 'select_account' },
+      redirectTo,            // <- IMPORTANT
+      // (optional) better tokens:
+      queryParams: { access_type: 'offline', prompt: 'consent' },
     },
   });
 }
 
 // Apple: wire later when Apple is ready in dashboard
 export function loginWithApple() {
+  const redirectTo = window.location.origin;
+  console.log('Apple OAuth redirectTo =', redirectTo);
+
   return supabase.auth.signInWithOAuth({
     provider: 'apple',
-    options: { redirectTo: location.origin + location.pathname },
+    options: { 
+      redirectTo,
+      queryParams: { access_type: 'offline', prompt: 'consent' },
+    },
   });
 }
 
@@ -94,14 +123,24 @@ export async function logout() {
 
 async function showAppForUser(user) {
   // User is authenticated - show app
-  document.getElementById('auth-screen').style.display = 'none';
-  document.getElementById('topbar').style.display = 'block';
-  document.getElementById('avatarBtn').hidden = false;
-  document.getElementById('appMain').style.display = 'block';
+  const authScreen = document.getElementById('auth-screen');
+  const topbar = document.getElementById('topbar');
+  const avatarBtn = document.getElementById('avatarBtn');
+  const appMain = document.getElementById('appMain');
+  
+  if (authScreen) authScreen.style.display = 'none';
+  if (topbar) topbar.style.display = 'block';
+  if (avatarBtn) avatarBtn.hidden = false;
+  if (appMain) appMain.style.display = 'block';
   
   // Set avatar with error handling for 429 rate limits
   const img = document.getElementById('avatarImg');
-  const avatarBtn = document.getElementById('avatarBtn');
+  
+  // Check if elements exist before proceeding
+  if (!img || !avatarBtn) {
+    console.warn('Avatar elements not found, skipping avatar setup');
+    return;
+  }
   
   if (user.user_metadata?.avatar_url) {
     // Try to load the avatar image
@@ -134,19 +173,19 @@ async function showAppForUser(user) {
 
   // Wire avatar click
   const btn = document.getElementById('avatarBtn');
-  btn.onclick = (e) => {
-    e.stopPropagation();
-    if (isIOS() && isStandalonePWA()) {
+  if (btn) {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      // Always use the bottom sheet modal for consistency
       openAccountSheet(user);
-    } else {
-      openAccountPopover(btn, user);
-    }
-  };
+    };
+  }
 
   // 1) Load initial items
   try {
     const items = await loadItems();
     if (window.wantApp && window.wantApp.renderItems) {
+      window.wantApp.items = items; // Store items in the instance
       window.wantApp.renderItems(items);
     } else {
       console.warn('WantApp instance not ready yet');
@@ -173,16 +212,15 @@ async function showAppForUser(user) {
 
 function showLoginScreen() {
   // Not authenticated - show login screen
-  document.getElementById('auth-screen').style.display = 'flex';
-  document.getElementById('topbar').style.display = 'none';
-  document.getElementById('avatarBtn').hidden = true;
-  document.getElementById('appMain').style.display = 'none';
-  
-  // Hide the entire topbar completely
+  const authScreen = document.getElementById('auth-screen');
   const topbar = document.getElementById('topbar');
-  if (topbar) {
-    topbar.style.display = 'none';
-  }
+  const avatarBtn = document.getElementById('avatarBtn');
+  const appMain = document.getElementById('appMain');
+  
+  if (authScreen) authScreen.style.display = 'flex';
+  if (topbar) topbar.style.display = 'none';
+  if (avatarBtn) avatarBtn.hidden = true;
+  if (appMain) appMain.style.display = 'none';
 
   // Google login with loading spinner
   document.getElementById('btn-google').onclick = () => {
@@ -203,20 +241,52 @@ function showLoginScreen() {
 }
 
 function openAccountSheet(user) {
-    const wrap = document.createElement('div');
-    wrap.className = 'account-sheet';
-    wrap.innerHTML = `
-        <div class="acc-name">${(user.name || user.email || 'Signed in')}</div>
-        <div class="acc-email">${user.email || ''}</div>
-        <div class="acc-divider"></div>
-        <button class="acc-logout" id="acc-logout-sheet">Log out</button>
+    // Populate user data
+    const name = user.user_metadata?.name || user.user_metadata?.full_name || user.email?.split('@')[0] || '—';
+    const email = user.email || '—';
+    
+    // Create the account sheet HTML
+    const html = `
+        <header class="sheet-header">
+            <h2>Account</h2>
+        </header>
+        <div class="sheet-body">
+            <div class="account-row">
+                <div class="account-label">Name</div>
+                <div class="account-value">${name}</div>
+            </div>
+            <div class="account-row">
+                <div class="account-label">Email</div>
+                <div class="account-value">${email}</div>
+            </div>
+            <hr class="sheet-divider" />
+            <button id="btn-logout" class="account-danger">
+                <span class="icon" aria-hidden="true">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M16 17L21 12M21 12L16 7M21 12H9M9 3H7.8C6.11984 3 5.27976 3 4.63803 3.32698C4.07354 3.6146 3.6146 4.07354 3.32698 4.63803C3 5.27976 3 6.11984 3 7.8V16.2C3 17.8802 3 18.7202 3.32698 19.362C3.6146 19.9265 4.07354 20.3854 4.63803 20.673C5.27976 21 6.11984 21 7.8 21H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </span>
+                <span>Log out</span>
+            </button>
+        </div>
     `;
-    wrap.querySelector('#acc-logout-sheet').onclick = async () => {
-        await logout();
-        if (typeof closeSheet === 'function') closeSheet();
-    };
-    if (typeof openSheet === 'function') openSheet({ content: wrap, title: 'Account' });
+    
+    // Use the shared sheet system
+    openSheet(html);
+    
+    // Wire logout button after the sheet is open
+    setTimeout(() => {
+        const logoutBtn = document.getElementById('btn-logout');
+        if (logoutBtn) {
+            logoutBtn.onclick = async () => {
+                await logout();
+                closeSheet();
+            };
+        }
+    }, 100);
 }
+
+
 
 let accountPopoverEl;
 function openAccountPopover(anchorEl, user) {
@@ -693,22 +763,18 @@ export class WantApp {
         if (items.length === 0) {
             grid.innerHTML = '';
             emptyState.style.display = 'block';
+            // Update store tags even when no items
+            this.renderStoreTags(items);
             return;
         }
 
         emptyState.style.display = 'none';
         grid.innerHTML = items.map(item => this.createItemCard(item)).join('');
         
-        // Bind delete events
-        items.forEach(item => {
-            const deleteBtn = document.getElementById(`delete-${item.id}`);
-            if (deleteBtn) {
-                deleteBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.deleteItem(item.id);
-                });
-            }
-        });
+        // Update store tags with current items
+        this.renderStoreTags(items);
+        
+        // More menu events are handled by delegation in setupMoreMenu()
     }
 
     // Real-time sync methods for Supabase
@@ -759,16 +825,30 @@ export class WantApp {
         const host = this.hostnameOf(url);
         const meta = this.extractBasicMetadata(url); // Use local fallback instead of Worker
 
-        // image: prefer proxied, fallback favicon, runtime onerror → original
-        const original = meta?.image || '';
-        const proxied = original ? this.proxiedImage(original) : '';
-        const fallback = `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
+        // Enhanced image handling for problematic sites
+        let original = meta?.image || '';
+        let proxied = '';
+        let fallback = `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
+
+        // Special handling for known problematic sites
+        if (host.includes('zara.com')) {
+            fallback = 'https://www.google.com/s2/favicons?domain=zara.com&sz=128&scale=2';
+        } else if (host.includes('hm.com') || host.includes('h&m')) {
+            fallback = 'https://www.google.com/s2/favicons?domain=hm.com&sz=128&scale=2';
+        } else if (host.includes('amazon.')) {
+            fallback = 'https://www.google.com/s2/favicons?domain=amazon.com&sz=128&scale=2';
+        }
+
+        // Only try to proxy if we have an original image and it's not from a problematic site
+        if (original && !host.includes('zara.com') && !host.includes('hm.com') && !host.includes('amazon.')) {
+            proxied = this.proxiedImage(original);
+        }
 
         const createdAt = Date.now();
         return {
             id: crypto?.randomUUID ? crypto.randomUUID() : String(createdAt),
             url,
-            title: meta?.title || host,
+            title: meta?.title || this.getDomainDisplayName(host),
             price: meta?.price || '',
             image: withStableBust(proxied || fallback, createdAt), // stable cache bust
             originalImage: original, // keep for onerror fallback in render
@@ -879,6 +959,8 @@ export class WantApp {
         el.querySelectorAll('.tag-chip').forEach(btn => {
             btn.addEventListener('click', () => {
                 const store = btn.dataset.store || null;
+                console.log('Tag clicked:', { store, currentItems: this.items?.length });
+                
                 this.selectedStore = store;
                 // persist (optional)
                 try { 
@@ -892,22 +974,34 @@ export class WantApp {
 
     // Refresh store tags with current items
     async refreshStoreTags() {
-        const items = await this.itemManager.getAllItems();
-        this.renderStoreTags(items);
+        // Use the items already loaded from Supabase
+        if (this.items) {
+            this.renderStoreTags(this.items);
+        }
     }
 
     async renderGridFiltered() {
-        const items = await this.itemManager.getAllItems();
-        this.items = items; // Store items in instance
+        // Use the items already loaded from Supabase (this.items)
+        if (!this.items) {
+            console.warn('No items available for filtering');
+            return;
+        }
+        
         const filtered = this.selectedStore
-            ? items.filter(it => (it.domain || this.getMainDomain(it.url)) === this.selectedStore)
-            : items;
+            ? this.items.filter(it => (it.domain || this.getMainDomain(it.url)) === this.selectedStore)
+            : this.items;
+
+        console.log('Filtering items:', {
+            total: this.items.length,
+            selectedStore: this.selectedStore,
+            filtered: filtered.length
+        });
 
         // Reuse existing renderItems but pass filtered
         this.renderItems(filtered);
 
         // Always (re)build tags from the full list so counts are accurate
-        this.renderStoreTags(items);
+        this.renderStoreTags(this.items);
     }
 
     // Escape HTML to prevent XSS
@@ -1033,7 +1127,8 @@ export class WantApp {
             // Update local items array
             this.items = this.items.filter(item => item.id !== id);
             
-            await this.renderGridFiltered();
+            // Re-render the grid with updated items
+            this.renderItems(this.items);
             this.showToast('Item deleted');
         } catch (error) {
             console.error('Error deleting item:', error);
@@ -1092,6 +1187,7 @@ export class WantApp {
 
         try {
             // Use the new Worker endpoint for robust extraction
+            console.log('Fetching metadata from worker for:', url);
             const res = await fetch(`${EXTRACT_ENDPOINT}?url=${encodeURIComponent(url)}`, {
                 mode: 'cors',
                 credentials: 'omit',
@@ -1099,23 +1195,35 @@ export class WantApp {
                 headers: { 'Accept': 'application/json' },
             });
             
+            console.log('Worker response status:', res.status);
+            
             if (res.ok) {
                 const meta = await res.json();
                 console.log('Preview data (Worker):', meta);
-                this.updatePreview(meta);
-                this.showPreview();
                 
-                // Update advanced fields if they're visible
-                if (!document.getElementById('advanced').classList.contains('hidden')) {
-                    this.setAdvancedFormValues(meta);
+                // Check if worker returned useful data
+                if (meta && (meta.title || meta.image || meta.price)) {
+                    this.updatePreview(meta);
+                    this.showPreview();
+                    
+                    // Update advanced fields if they're visible
+                    if (!document.getElementById('advanced').classList.contains('hidden')) {
+                        this.setAdvancedFormValues(meta);
+                    }
+                } else {
+                    console.log('Worker returned empty data, using fallback');
+                    throw new Error('Worker returned empty data');
                 }
             } else {
-                throw new Error(`Worker returned ${res.status}`);
+                const errorText = await res.text();
+                console.error('Worker error response:', errorText);
+                throw new Error(`Worker returned ${res.status}: ${errorText}`);
             }
         } catch (error) {
             console.error('Error handling URL input:', error);
             // Show fallback preview
             const fallbackMeta = this.extractBasicMetadata(url);
+            console.log('Using fallback metadata:', fallbackMeta);
             this.updatePreview(fallbackMeta);
             this.showPreview();
         }
@@ -1162,22 +1270,156 @@ export class WantApp {
     // Fallback metadata extraction when worker fails
     extractBasicMetadata(url) {
         const host = this.hostnameOf(url);
-        const fallbackImg = `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
         
-        // Try to extract title from URL path
-        let title = host;
+        // Enhanced fallback image handling for problematic sites
+        let fallbackImg = `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
+        
+        // Special handling for known problematic sites with better favicon URLs
+        if (host.includes('zara.com')) {
+            fallbackImg = 'https://www.google.com/s2/favicons?domain=zara.com&sz=128&scale=2';
+        } else if (host.includes('hm.com') || host.includes('h&m')) {
+            fallbackImg = 'https://www.google.com/s2/favicons?domain=hm.com&sz=128&scale=2';
+        } else if (host.includes('amazon.')) {
+            fallbackImg = 'https://www.google.com/s2/favicons?domain=amazon.com&sz=128&scale=2';
+        }
+        
+        // Try to extract title from URL path with better parsing
+        let title = this.getDomainDisplayName(host);
         try {
             const urlObj = new URL(url);
             const pathParts = urlObj.pathname.split('/').filter(part => part.length > 0);
-            if (pathParts.length > 0) {
-                // Use last meaningful path segment as title
-                const lastPart = pathParts[pathParts.length - 1];
-                if (lastPart && lastPart !== 'index.html' && lastPart !== 'index') {
-                    title = lastPart.replace(/[-_]/g, ' ').replace(/\.[^/.]+$/, '');
+            
+            // Enhanced title extraction for problematic e-commerce sites
+            if (host.includes('zara.com') || host.includes('hm.com') || host.includes('amazon.')) {
+                // Site-specific patterns
+                let productPatterns = [];
+                
+                if (host.includes('zara.com')) {
+                    // Zara specific patterns
+                    productPatterns = [
+                        /\/product\/([^\/\?]+)/i,
+                        /\/[a-z-]+\/([^\/\?]+)/i, // e.g., /women/dresses/product-name
+                        /\/[A-Z0-9]{8,}/i, // Zara product codes
+                    ];
+                } else if (host.includes('amazon.')) {
+                    // Amazon specific patterns
+                    productPatterns = [
+                        /\/dp\/([A-Z0-9]{10})/i, // Amazon ASIN
+                        /\/gp\/product\/([A-Z0-9]{10})/i, // Amazon product
+                        /\/[A-Z0-9]{10,}/i, // Long alphanumeric (likely product ID)
+                        /\/[^\/]+\/dp\/([A-Z0-9]{10})/i, // Product with category
+                    ];
+                } else {
+                    // Generic e-commerce patterns
+                    productPatterns = [
+                        /\/product\/([^\/\?]+)/i,
+                        /\/item\/([^\/\?]+)/i,
+                        /\/p\/([^\/\?]+)/i,
+                        /\/dp\/([A-Z0-9]+)/i,
+                        /\/[A-Z0-9]{10,}/i,
+                    ];
+                }
+                
+                for (const pattern of productPatterns) {
+                    const match = url.match(pattern);
+                    if (match && match[1]) {
+                        let productName = match[1]
+                            .replace(/[-_]/g, ' ')
+                            .replace(/\.[^/.]+$/, '') // Remove file extensions
+                            .replace(/\?.*$/, '') // Remove query parameters
+                            .replace(/#.*$/, '') // Remove hash fragments
+                            .trim();
+                        
+                        // Special handling for Amazon ASINs - use a more descriptive title
+                        if (host.includes('amazon.') && /^[A-Z0-9]{10}$/.test(productName)) {
+                            // For Amazon ASINs, try to get a better title from the URL path
+                            const pathMatch = url.match(/\/[^\/]+\/dp\/[A-Z0-9]{10}\/?/i);
+                            if (pathMatch) {
+                                const pathBeforeAsin = pathMatch[0].replace(/\/dp\/[A-Z0-9]{10}\/?/i, '');
+                                const category = pathBeforeAsin.split('/').pop();
+                                if (category && category.length > 2) {
+                                    productName = category.replace(/[-_]/g, ' ');
+                                }
+                            }
+                        }
+                        
+                        // Special handling for Zara product codes
+                        if (host.includes('zara.com') && /^[A-Z0-9]{8,}$/.test(productName)) {
+                            // For Zara product codes, try to get category from URL
+                            const categoryMatch = url.match(/\/([a-z-]+)\/[A-Z0-9]{8,}/i);
+                            if (categoryMatch && categoryMatch[1]) {
+                                productName = categoryMatch[1].replace(/[-_]/g, ' ');
+                            }
+                        }
+                        
+                        if (productName.length > 2 && !/^\d+$/.test(productName)) {
+                            title = productName;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Enhanced fallback to path-based extraction
+            if (pathParts.length > 0 && title === this.getDomainDisplayName(host)) {
+                // For Zara, try to get category from path
+                if (host.includes('zara.com')) {
+                    const categoryIndex = pathParts.findIndex(part => 
+                        ['women', 'men', 'kids', 'home', 'beauty'].includes(part.toLowerCase())
+                    );
+                    if (categoryIndex !== -1 && categoryIndex < pathParts.length - 1) {
+                        const category = pathParts[categoryIndex];
+                        const subcategory = pathParts[categoryIndex + 1];
+                        if (subcategory && subcategory !== 'index.html') {
+                            title = `${category} ${subcategory}`.replace(/[-_]/g, ' ');
+                        } else {
+                            title = category.replace(/[-_]/g, ' ');
+                        }
+                    }
+                }
+                // For Amazon, try to get category from path
+                else if (host.includes('amazon.')) {
+                    const categoryIndex = pathParts.findIndex(part => 
+                        part.length > 3 && !/^[A-Z0-9]{10,}$/.test(part) && !/^\d+$/.test(part)
+                    );
+                    if (categoryIndex !== -1) {
+                        const category = pathParts[categoryIndex];
+                        if (category && category !== 'index.html' && category !== 'dp' && category !== 'gp') {
+                            title = category.replace(/[-_]/g, ' ');
+                        }
+                    }
+                }
+                // Generic fallback
+                else {
+                    // Use last meaningful path segment as title
+                    const lastPart = pathParts[pathParts.length - 1];
+                    if (lastPart && lastPart !== 'index.html' && lastPart !== 'index') {
+                        // Clean up the title
+                        let cleanTitle = lastPart
+                            .replace(/[-_]/g, ' ')
+                            .replace(/\.[^/.]+$/, '') // Remove file extensions
+                            .replace(/\?.*$/, '') // Remove query parameters
+                            .replace(/#.*$/, '') // Remove hash fragments
+                            .trim();
+                        
+                        // Only use if it's meaningful (not just numbers or single chars)
+                        if (cleanTitle.length > 2 && !/^\d+$/.test(cleanTitle)) {
+                            title = cleanTitle;
+                        }
+                    }
+                }
+            }
+            
+            // Try to extract from search params for e-commerce sites
+            const searchParams = urlObj.searchParams;
+            if (searchParams.has('q') || searchParams.has('search')) {
+                const searchTerm = searchParams.get('q') || searchParams.get('search');
+                if (searchTerm && searchTerm.length > 2) {
+                    title = decodeURIComponent(searchTerm);
                 }
             }
         } catch (e) {
-            // Keep hostname as title
+            // Keep domain name as title
         }
         
         return {
@@ -1186,6 +1428,39 @@ export class WantApp {
             price: '',
             domain: host,
         };
+    }
+
+    // Get user-friendly domain display names
+    getDomainDisplayName(host) {
+        const domainMap = {
+            'zara.com': 'Zara',
+            'www.zara.com': 'Zara',
+            'hm.com': 'H&M',
+            'www.hm.com': 'H&M',
+            'www2.hm.com': 'H&M',
+            'amazon.com': 'Amazon',
+            'www.amazon.com': 'Amazon',
+            'amazon.co.uk': 'Amazon UK',
+            'www.amazon.co.uk': 'Amazon UK',
+            'amazon.de': 'Amazon Germany',
+            'www.amazon.de': 'Amazon Germany',
+            'amazon.fr': 'Amazon France',
+            'www.amazon.fr': 'Amazon France',
+            'amazon.it': 'Amazon Italy',
+            'www.amazon.it': 'Amazon Italy',
+            'amazon.es': 'Amazon Spain',
+            'www.amazon.es': 'Amazon Spain',
+            'amazon.ca': 'Amazon Canada',
+            'www.amazon.ca': 'Amazon Canada',
+            'amazon.com.au': 'Amazon Australia',
+            'www.amazon.com.au': 'Amazon Australia',
+            'amazon.co.jp': 'Amazon Japan',
+            'www.amazon.co.jp': 'Amazon Japan',
+            'instagram.com': 'Instagram',
+            'www.instagram.com': 'Instagram',
+        };
+        
+        return domainMap[host] || host.replace(/^www\./, '');
     }
 
     showPreviewLoading() {
@@ -1363,19 +1638,49 @@ export class WantApp {
         const openMoreMenuFor = (targetBtn, itemId) => {
             moreCurrentId = itemId;
 
-            // Compute position near the button (below-left)
-            const r = targetBtn.getBoundingClientRect();
-            const pad = 8;
-            const top = r.bottom + pad + window.scrollY;
-            const left = Math.min(
-                window.scrollX + r.left,
-                window.scrollX + window.innerWidth - (moreMenu.offsetWidth || 220) - pad
-            );
-
-            moreMenu.style.top = `${top}px`;
-            moreMenu.style.left = `${left}px`;
+            // First show the menu to get its dimensions
             moreMenu.hidden = false;
             moreBackdrop.hidden = false;
+            
+            // Compute position near the button
+            const r = targetBtn.getBoundingClientRect();
+            const menuRect = moreMenu.getBoundingClientRect();
+            const pad = 8;
+            
+            // Calculate initial position (below the button)
+            // Use viewport coordinates directly since menu is position: fixed
+            let top = r.bottom + pad;
+            let left = r.left;
+            
+            // Ensure menu doesn't go off-screen horizontally
+            if (left + menuRect.width > window.innerWidth - pad) {
+                left = window.innerWidth - menuRect.width - pad;
+            }
+            if (left < pad) {
+                left = pad;
+            }
+            
+            // Ensure menu doesn't go off-screen vertically
+            if (top + menuRect.height > window.innerHeight - pad) {
+                // Position above the button instead
+                top = r.top - menuRect.height - pad;
+            }
+            if (top < pad) {
+                top = pad;
+            }
+            
+            // Apply position using viewport coordinates (no scroll offset needed for fixed positioning)
+            moreMenu.style.top = `${top}px`;
+            moreMenu.style.left = `${left}px`;
+            
+            // Debug logging
+            console.log('Menu positioned:', {
+                buttonRect: r,
+                menuRect: menuRect,
+                finalPosition: { top, left },
+                menuStyle: { top: moreMenu.style.top, left: moreMenu.style.left }
+            });
+            
             requestAnimationFrame(() => {
                 moreBackdrop.classList.add('active');
             });
@@ -1401,6 +1706,16 @@ export class WantApp {
             if (!btn) return;
             e.preventDefault();
             e.stopPropagation();
+            
+            // Debug logging
+            console.log('More button clicked:', {
+                id: btn.dataset.id,
+                rect: btn.getBoundingClientRect(),
+                scrollY: window.scrollY,
+                scrollX: window.scrollX,
+                viewport: { width: window.innerWidth, height: window.innerHeight }
+            });
+            
             openMoreMenuFor(btn, btn.dataset.id);
         });
 
@@ -1423,14 +1738,15 @@ export class WantApp {
             }
 
             try {
-                // Try to get item from database first, then from memory
-                let item = await this.db.getItemById(moreCurrentId);
-                if (!item) {
-                    item = this.items?.find(i => i.id === moreCurrentId);
-                }
+                // Get item from local items array (Supabase items are already loaded)
+                console.log('Looking for item with ID:', moreCurrentId);
+                console.log('Available items:', this.items?.map(i => ({ id: i.id, title: i.title })));
+                
+                const item = this.items?.find(i => i.id === moreCurrentId);
                 
                 if (!item) { 
                     console.error('Item not found for ID:', moreCurrentId);
+                    console.error('Available item IDs:', this.items?.map(i => i.id));
                     this.showToast('Item not found');
                     closeMoreMenu(); 
                     return; 
@@ -1478,8 +1794,14 @@ export class WantApp {
                     const ok = confirm('Delete this item?');
                     if (ok) {
                         try {
-                            await this.db.deleteItem(item.id);
-                            await this.renderGridFiltered();
+                            // Delete from Supabase
+                            await deleteItem(item.id);
+                            
+                            // Update local items array
+                            this.items = this.items.filter(i => i.id !== item.id);
+                            
+                            // Re-render the grid
+                            this.renderItems(this.items);
                             this.showToast('Item deleted');
                         } catch (error) {
                             console.error('Failed to delete item:', error);
@@ -1646,11 +1968,38 @@ export class WantApp {
             // Create optimistic card first
             const tempId = this.addOptimisticCard(url);
             
-            // Fetch metadata from worker
-            const response = await fetch(`${EXTRACT_ENDPOINT}?url=${encodeURIComponent(url)}`);
-            if (!response.ok) throw new Error('Failed to fetch metadata');
+            let metadata = null;
             
-            const metadata = await response.json();
+            // Try to fetch metadata from worker first
+            try {
+                console.log('Fetching metadata from worker for addItemDirectly:', url);
+                const response = await fetch(`${EXTRACT_ENDPOINT}?url=${encodeURIComponent(url)}`);
+                console.log('Worker response status for addItemDirectly:', response.status);
+                
+                if (response.ok) {
+                    metadata = await response.json();
+                    console.log('Worker metadata for addItemDirectly:', metadata);
+                    
+                    // Check if worker returned useful data
+                    if (!metadata || (!metadata.title && !metadata.image && !metadata.price)) {
+                        console.log('Worker returned empty data, using fallback');
+                        metadata = null;
+                    }
+                } else {
+                    const errorText = await response.text();
+                    console.error('Worker error for addItemDirectly:', errorText);
+                    metadata = null;
+                }
+            } catch (workerError) {
+                console.warn('Worker metadata extraction failed, using fallback:', workerError);
+                metadata = null;
+            }
+            
+            // If worker failed or returned no useful data, use local fallback
+            if (!metadata) {
+                console.log('Using local metadata fallback for:', url);
+                metadata = this.extractBasicMetadata(url);
+            }
             
             // Add item to Supabase
             const item = await addItem({
