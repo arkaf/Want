@@ -80,7 +80,8 @@ export async function authInit() {
 }
 
 export function loginWithGoogle() {
-  const redirectTo = window.location.origin; // e.g., http://localhost:8057 in dev, GitHub in prod
+  // Use the full current URL to preserve the /Want/ path
+  const redirectTo = window.location.href.split('?')[0]; // Remove any query params
   console.log('OAuth redirectTo =', redirectTo); // keep for debugging
 
   return supabase.auth.signInWithOAuth({
@@ -95,7 +96,8 @@ export function loginWithGoogle() {
 
 // Apple: wire later when Apple is ready in dashboard
 export function loginWithApple() {
-  const redirectTo = window.location.origin;
+  // Use the full current URL to preserve the /Want/ path
+  const redirectTo = window.location.href.split('?')[0]; // Remove any query params
   console.log('Apple OAuth redirectTo =', redirectTo);
 
   return supabase.auth.signInWithOAuth({
@@ -117,8 +119,8 @@ export async function logout() {
     window.wantApp.items = [];
   }
   
-  // Hard bounce to the root to kill any stale state from SW/router
-  location.replace('/');
+  // Hard bounce to the current path to kill any stale state from SW/router
+  location.replace(window.location.pathname);
 }
 
 async function showAppForUser(user) {
