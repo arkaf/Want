@@ -4,7 +4,9 @@
   "description": "A super-simple, offline-first Progressive Web App for managing your personal wishlist. Built with vanilla JavaScript and IndexedDB for local storage.",
   "main": "add.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "node build.js",
+    "dev": "python3 -m http.server 8000"
   },
   "keywords": [],
   "author": "",

@@ -1,4 +1,3 @@
-/* Reset and base styles */
 * {
     margin: 0;
     padding: 0;
@@ -12,13 +11,15 @@ body {
     line-height: 1.6;
 }
 
-/* ---- Top bar: white background, sticky, no divider ---- */
+
 .topbar {
     position: sticky;
     top: 0;
     z-index: 20;
-    background: #ffffff;
-    /* remove any border-bottom/divider */
+    background: rgba(255,255,255,0.7);
+    -webkit-backdrop-filter: saturate(180%) blur(16px);
+    backdrop-filter: saturate(180%) blur(16px);
+    
     border-bottom: 0 !important;
     box-shadow: none;
     transition: box-shadow 0.3s ease;
@@ -31,7 +32,7 @@ body {
     align-items: center;
 }
 
-/* Extended soft white fade under the topbar - no hard stops */
+
 .topbar::after {
     content: "";
     position: absolute;
@@ -50,53 +51,27 @@ body {
     pointer-events: none;
 }
 
-/* Top white gradient - connects seamlessly with top bar */
-.top-gradient {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    width: 100%;
-    height: 13.0208333333vw;
-    background: linear-gradient(180deg, #ffffff 0%, #ffffff 20%, rgba(255, 255, 255, 0.8) 40%, rgba(255, 255, 255, 0.4) 70%, transparent 100%);
-    pointer-events: none;
-    z-index: 19;
-}
 
-/* Responsive height adjustments for web resolutions */
-@media (min-width: 768px) {
-    .top-gradient {
-        height: 80px; /* Fixed height for tablets and up */
-    }
-}
-
-@media (min-width: 1024px) {
-    .top-gradient {
-        height: 60px; /* Smaller height for desktop */
-    }
-}
-
-/* Ensure overlays don't block clicks */
 .header-blur,
 .footer-blur,
 .gradient-overlay,
 .touch-blocker {
-    pointer-events: none;    /* they must not eat taps/clicks */
+    pointer-events: none;    
 }
 
-/* Modal z-index management */
+
 .modal[data-open] {
     z-index: 1000;
 }
 
-/* Ensure modals are properly hidden when closed */
+
 .modal[hidden],
 #addModal[hidden],
 #settingsModal[hidden] {
     display: none !important;
 }
 
-/* Safari tap highlight / hit areas */
+
 button, .btn {
     -webkit-tap-highlight-color: transparent;
 }
@@ -171,36 +146,23 @@ h1 {
     height: 24px;
 }
 
-/* Main content */
+
 .main {
     padding: 1rem;
     max-width: 1200px;
     margin: 0 auto;
-    /* Make sure content isn't hidden behind the bottom gradient */
-    padding-bottom: calc(13.0208333333vw + env(safe-area-inset-bottom, 0) + 16px);
-    /* Add subtle blur to content area for seamless blending */
+    
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0) + 16px);
+    
     -webkit-backdrop-filter: blur(1px);
     backdrop-filter: blur(1px);
 }
 
-/* Responsive padding adjustments for web resolutions */
-@media (min-width: 768px) {
-    .main {
-        padding-bottom: calc(100px + env(safe-area-inset-bottom, 0) + 16px);
-    }
-}
 
-@media (min-width: 1024px) {
-    .main {
-        padding-bottom: calc(80px + env(safe-area-inset-bottom, 0) + 16px);
-    }
-}
-
-/* --- CARD GRID --- */
 .items-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
 }
 
 @media (min-width: 768px) {
@@ -217,7 +179,7 @@ h1 {
     }
 }
 
-/* Item cards */
+
 .item-card {
     display: flex;
     flex-direction: column;
@@ -235,7 +197,7 @@ h1 {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
-/* Card link wrapper */
+
 .item-card .card-link {
     display: flex;
     flex-direction: column;
@@ -244,79 +206,33 @@ h1 {
     flex: 1;
 }
 
-/* Square thumbnail container */
+
 .item-card .thumb {
     position: relative;
     width: 100%;
-    aspect-ratio: 1 / 1;              /* <-- keeps it perfectly square */
+    aspect-ratio: 1 / 1;              
     border-radius: 14px;
     overflow: hidden;
     background: var(--surface-2, #f1f1f1);
 }
 
-/* Image inside the square */
+
 .item-card .thumb img {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    object-fit: cover;                 /* <-- fill the square, no distortion */
+    object-fit: cover;                 
     opacity: 0;
     transition: opacity .2s ease;
 }
 
-/* Video inside the square */
-.item-card .thumb video {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;                 /* <-- fill the square, no distortion */
-    opacity: 0;
-    transition: opacity .2s ease;
-}
 
-/* Video container */
-.item-card .thumb .video-container {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-}
-
-/* Play button overlay */
-.item-card .thumb .play-button-overlay {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(0, 0, 0, 0.7);
-    border-radius: 50%;
-    width: 60px;
-    height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    z-index: 2;
-    transition: background-color 0.2s ease;
-}
-
-.item-card .thumb .play-button-overlay:hover {
-    background: rgba(0, 0, 0, 0.9);
-}
-
-/* When loaded, fade in image */
 .item-card .thumb.loaded img {
     opacity: 1;
 }
 
-/* When loaded, fade in video */
-.item-card .thumb.loaded video {
-    opacity: 1;
-}
 
-/* Shimmer placeholder while no image */
 .item-card .thumb.placeholder::before {
     content: "";
     position: absolute;
@@ -335,7 +251,7 @@ h1 {
     100% { transform: translateX(100%); }
 }
 
-/* Optional: a subtle grid background for no-image cards */
+
 .item-card .thumb.no-image {
     background:
         radial-gradient( circle at 30% 30%, rgba(0,0,0,.07) 0 35%, transparent 36%) 0 0/50% 50%,
@@ -343,7 +259,7 @@ h1 {
         var(--surface-2, #f1f1f1);
 }
 
-/* Legacy image placeholder (keeping for backward compatibility) */
+
 .image-placeholder {
     position: absolute;
     inset: 0;
@@ -371,7 +287,7 @@ h1 {
     max-width: 100%;
 }
 
-/* Overflow button (top-right over image) */
+
 .item-card .overflow-btn {
     position: absolute;
     top: 8px;
@@ -391,7 +307,7 @@ h1 {
     transform: scale(0.96);
 }
 
-/* Card meta information */
+
 .item-card .meta {
     padding: 12px;
     color: #000;
@@ -401,11 +317,11 @@ h1 {
 }
 
 .item-card .title {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
     line-height: 1.25;
     margin: 0 0 6px;
-    /* Truncate after 2 lines */
+    
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -414,55 +330,37 @@ h1 {
     color: #000;
 }
 
-@media (min-width: 768px) {
-    .item-card .title {
-        font-size: 16px;
-    }
-}
-
 .item-card .price {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 700;
     line-height: 1.2;
     margin: 0 0 4px;
     color: #000;
 }
 
-@media (min-width: 768px) {
-    .item-card .price {
-        font-size: 16px;
-    }
-}
-
 .item-card .domain {
-    font-size: 12px;
+    font-size: 14px;
     color: #6b7280;
     line-height: 1.2;
-    /* Ensure it doesn't wrap to multiple lines */
+    
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-@media (min-width: 768px) {
-    .item-card .domain {
-        font-size: 14px;
-    }
-}
 
-/* Optimistic card styling (loading state) */
 .item-card.optimistic {
-    /* No opacity - only shimmer conveys loading */
+    
     transition: opacity 0.3s ease;
 }
 
-/* shimmer may cover only the image, never block touches */
+
 .item-card .thumb--loading,
 .item-card .thumb--loading * {
     pointer-events: none;
 }
 
-/* ensure the overflow button is always clickable and above shimmer */
+
 .item-card .overflow-btn {
     position: absolute;
     top: 8px;
@@ -471,7 +369,7 @@ h1 {
     pointer-events: auto;
 }
 
-/* menu should accept clicks only when opened */
+
 .item-card .menu { 
     pointer-events: none; 
     z-index: 9999; 
@@ -517,7 +415,7 @@ h1 {
     100% { background-position: 200% 0; }
 }
 
-/* Skeleton placeholder for loading images */
+
 .item-card .image-skeleton {
     width: 100%;
     aspect-ratio: 1 / 1;
@@ -528,14 +426,14 @@ h1 {
     pointer-events: none;
 }
 
-/* Ensure any shimmer/overlay never steals taps */
+
 .skeleton,
 .shimmer,
 .item-card .image-placeholder {
     pointer-events: none;
 }
 
-/* Overflow menu (iOS-style) */
+
 .menu-backdrop {
     position: fixed;
     inset: 0;
@@ -556,13 +454,13 @@ h1 {
     z-index: 1001;
     min-width: 180px;
     background: #fff;
-    color: #000000 !important; /* Force black text */
-    -webkit-text-fill-color: #000000; /* iOS Safari */
+    color: #000000 !important; 
+    -webkit-text-fill-color: #000000; 
     border: 1px solid #e5e7eb;
     border-radius: 14px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
     overflow: hidden;
-    /* Ensure menu is always visible */
+    
     max-width: calc(100vw - 16px);
     max-height: calc(100vh - 16px);
 }
@@ -587,8 +485,8 @@ h1 {
     border: 0;
     border-bottom: 1px solid #f1f5f9;
     cursor: pointer;
-    color: #000000 !important; /* Force black text on all devices */
-    -webkit-text-fill-color: #000000; /* iOS Safari */
+    color: #000000 !important; 
+    -webkit-text-fill-color: #000000; 
 }
 
 .menu-item:last-child {
@@ -600,11 +498,11 @@ h1 {
 }
 
 .menu-item.danger {
-    color: #dc2626 !important; /* Force red text on all devices */
-    -webkit-text-fill-color: #dc2626; /* iOS Safari */
+    color: #dc2626 !important; 
+    -webkit-text-fill-color: #dc2626; 
 }
 
-/* Remove any previous overlay styles */
+
 .card-footer, .card .overlay {
     display: none !important;
 }
@@ -632,21 +530,25 @@ h1 {
     color: #000000;
 }
 
-/* Empty state */
+
 .empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     min-height: 60vh;
-    padding: 10rem 1rem;
+    padding: 3rem 1rem;
     color: #666666;
     text-align: center;
 }
 
 .empty-image {
-    width: 300px;
-    height: 300px;
+    width: 500px;
+    height: 500px;
+    margin-bottom: 2rem;
+    opacity: 0.7;
+    max-width: 90vw;
+    max-height: 50vh;
 }
 
 .empty-state p:first-of-type {
@@ -661,12 +563,12 @@ h1 {
     color: #6b7280;
 }
 
-/* iOS safe areas + keyboard-aware viewport */
+
 :root {
     --inset-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
 }
 
-/* Bottom Sheet Backdrop */
+
 .sheet-backdrop {
     position: fixed;
     inset: 0;
@@ -676,7 +578,7 @@ h1 {
     z-index: 1000;
 }
 
-/* Bottom Sheet base: full device width */
+
 .sheet {
     position: fixed;
     left: 0;
@@ -693,7 +595,7 @@ h1 {
     will-change: transform;
 }
 
-/* Content area */
+
 .sheet-content {
     padding: 16px;
     padding-bottom: calc(16px + var(--inset-bottom));
@@ -702,7 +604,7 @@ h1 {
     -webkit-overflow-scrolling: touch;
 }
 
-/* Grab-handle */
+
 .sheet-handle {
     width: 44px;
     height: 5px;
@@ -711,7 +613,7 @@ h1 {
     margin: 8px auto 10px;
 }
 
-/* Open state */
+
 .sheet.is-open {
     transform: translateY(0);
 }
@@ -720,13 +622,13 @@ h1 {
     opacity: 1;
 }
 
-/* Prevent any "zoomed modal" layout: cards behind must not affect layout */
+
 body.sheet-open {
     overflow: hidden;
     touch-action: none;
 }
 
-/* Sheet content styles */
+
 .sheet-header {
     display: flex;
     justify-content: space-between;
@@ -764,7 +666,7 @@ body.sheet-open {
     background: #e5e5e5;
 }
 
-/* Form */
+
 #addForm {
     padding: 1.5rem;
 }
@@ -830,7 +732,7 @@ body.sheet-open {
     background: #e5e5e5;
 }
 
-/* Toast */
+
 #toast {
     position: fixed;
     left: 50%;
@@ -863,27 +765,27 @@ body.sheet-open {
     background: rgba(255, 153, 0, 0.85);
 }
 
-/* Responsive design */
+
 @media (min-width: 768px) {
     main {
         padding: 1.5rem;
     }
 }
 
-/* Loading state */
+
 .loading {
     opacity: 0.6;
     pointer-events: none;
 }
 
-/* Error state */
+
 .error {
     color: #000000;
     font-size: 0.875rem;
     margin-top: 0.25rem;
 }
 
-/* Quick add page styles */
+
 .quick-add-container {
     min-height: 100vh;
     display: flex;
@@ -937,7 +839,7 @@ body.sheet-open {
     color: #000000;
 }
 
-/* Settings Modal */
+
 .settings-content {
     padding: 1.5rem;
 }
@@ -968,13 +870,13 @@ body.sheet-open {
     flex: 1;
 }
 
-/* Modal Preview */
+
 .preview {
     margin: 1.5rem 0;
     text-align: center;
 }
 
-/* Preview container always square (1:1 ratio) */
+
 .preview-img-wrap {
     position: relative;
     width: 100%;
@@ -985,7 +887,7 @@ body.sheet-open {
     margin-bottom: 1rem;
 }
 
-/* Image fills container */
+
 .preview-img-wrap img {
     position: absolute;
     inset: 0;
@@ -1027,28 +929,44 @@ body.sheet-open {
     opacity: 0.7;
 }
 
-/* Hidden utility class */
+
 .hidden {
     display: none !important;
 }
 
-/* ---- Bottom transparent gradient ---- */
+
 .bottom-blur {
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
-    width: 100%;
-    height: 13.0208333333vw;
-    background: linear-gradient(180deg, transparent 0, white 100%);
+    z-index: 40;
+    height: 24px;
     pointer-events: none;
+
+    
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+
+    
+    background: linear-gradient(
+        to top,
+        rgba(255,255,255,1) 0%,
+        rgba(255,255,255,0.95) 15%,
+        rgba(255,255,255,0.8) 30%,
+        rgba(255,255,255,0.6) 45%,
+        rgba(255,255,255,0.4) 60%,
+        rgba(255,255,255,0.2) 75%,
+        rgba(255,255,255,0.05) 90%,
+        rgba(255,255,255,0) 100%
+    );
 }
 
-/* Store Tags */
+
 .store-tags {
     display: flex;
     gap: 8px;
-    padding: 0px 4px 24px; 
+    padding: 0px 4px 12px;
     overflow-x: auto;
     overflow-y: hidden;
     flex-wrap: nowrap;
@@ -1094,12 +1012,12 @@ body.sheet-open {
     font-variant-numeric: tabular-nums;
 }
 
-/* Remove any legacy dividers */
+
 .header-divider, .bottom-divider {
     display: none !important;
 }
 
-/* Initial Loading Spinner */
+
 .initial-loader {
     position: fixed;
     top: 0;
@@ -1145,7 +1063,7 @@ body.sheet-open {
     100% { transform: rotate(360deg); }
 }
 
-/* Signup screen */
+
 .auth-screen {
     display: flex;
     flex-direction: column;
@@ -1163,13 +1081,13 @@ body.sheet-open {
     z-index: 1000;
 }
 
-/* Hide navbar when auth screen is shown */
+
 .auth-screen ~ .topbar,
 .auth-screen ~ header {
     display: none !important;
 }
 
-/* Ensure main app is visible when authenticated */
+
 body.authenticated .auth-screen {
     display: none !important;
 }
@@ -1235,7 +1153,7 @@ body.authenticated .main {
     background: #555;
 }
 
-/* Authentication loading spinner */
+
 .auth-loading-spinner {
     display: flex;
     align-items: center;
@@ -1252,7 +1170,7 @@ body.authenticated .main {
     animation: spin 1s linear infinite;
 }
 
-/* Authentication error message */
+
 .auth-error {
     margin-top: 16px;
     padding: 12px 16px;
@@ -1273,7 +1191,7 @@ body.authenticated .main {
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* Avatar in navbar */
+
 .avatar-btn {
     width: 32px; height: 32px;
     padding: 0; border: 0; background: transparent;
@@ -1283,7 +1201,7 @@ body.authenticated .main {
 }
 .avatar-btn img { width: 24px; height: 24px; border-radius: 50%; display: block; }
 
-/* Fallback avatar with initials */
+
 .avatar-fallback {
     width: 24px; height: 24px;
     border-radius: 50%;
@@ -1298,7 +1216,7 @@ body.authenticated .main {
     letter-spacing: 0.5px;
 }
 
-/* Account popover */
+
 .account-popover {
     position: absolute;
     min-width: 220px;
@@ -1334,7 +1252,7 @@ body.authenticated .main {
     cursor: not-allowed;
 }
 
-/* Account Sheet Styles */
+
 .account-row {
     display: flex;
     justify-content: space-between;

@@ -1,6 +1,3 @@
-// Supabase functionality will be accessed via window.db
-
-// Import the new modular architecture
 import { ItemManager } from './src/data/items.js';
 import { renderCard } from './src/ui/renderCard.js';
 import { isProbablyUrl } from './src/utils/url.js';
@@ -8,21 +5,21 @@ import { openSheet, closeSheet } from './src/ui/bottomSheet.js';
 import { EXTRACT_ENDPOINT } from './src/config.js';
 import { withStableBust } from './src/utils/cacheBust.js';
 
-// Import Supabase auth and items API
+
 import { supabase } from './supabaseClient.js';
 import { loadItems, addItem, deleteItem, subscribeItems } from './itemsApi.js';
 
-// Track pending adds to prevent duplicates
 
 
-// Constants & utils
+
+
 const PASTE_DEBOUNCE_MS = 120;
 
 function domainFrom(url) {
     try { return new URL(url).hostname.replace(/^www\./,''); } catch { return ""; }
 }
 
-// Auth helper functions
+
 function isStandalonePWA() {
     return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 }
@@ -31,9 +28,9 @@ function isIOS() {
     return /iPhone|iPad|iPod/i.test(navigator.userAgent); 
 }
 
-// Supabase authentication functions
+
 export async function authInit() {
-  // Debounce auth state updates to prevent login/home bouncing
+  
   let renderQueued = false;
   
   function renderOnceStable() {
@@ -41,16 +38,16 @@ export async function authInit() {
     renderQueued = true;
     queueMicrotask(() => {
       renderQueued = false;
-      // Render logic will be handled by the auth state change
+      
     });
   }
 
-  // Function to hide the initial loader
+  
   function hideInitialLoader() {
     const loader = document.getElementById('initial-loader');
     if (loader) {
       loader.classList.add('hidden');
-      // Remove the loader from DOM after animation
+      
       setTimeout(() => {
         if (loader.parentNode) {
           loader.parentNode.removeChild(loader);
@@ -59,7 +56,7 @@ export async function authInit() {
     }
   }
 
-  // Listen to auth state changes
+  
   const unsub = supabase.auth.onAuthStateChange((_event, session) => {
     if (session?.user) {
       showAppForUser(session.user);
@@ -80,28 +77,24 @@ export async function authInit() {
 }
 
 export function loginWithGoogle() {
-  // For local development, hardcode the redirect URL
-  const redirectTo = window.location.hostname === 'localhost' 
-    ? 'http://localhost:8000' 
-    : window.location.href.split('?')[0]; // Remove any query params
-  console.log('OAuth redirectTo =', redirectTo); // keep for debugging
+  
+  const redirectTo = window.location.href.split('?')[0]; 
+  console.log('OAuth redirectTo =', redirectTo); 
 
   return supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo,            // <- IMPORTANT
-      // (optional) better tokens:
+      redirectTo,            
+      
       queryParams: { access_type: 'offline', prompt: 'consent' },
     },
   });
 }
 
-// Apple: wire later when Apple is ready in dashboard
+
 export function loginWithApple() {
-  // For local development, hardcode the redirect URL
-  const redirectTo = window.location.hostname === 'localhost' 
-    ? 'http://localhost:8000' 
-    : window.location.href.split('?')[0]; // Remove any query params
+  
+  const redirectTo = window.location.href.split('?')[0]; 
   console.log('Apple OAuth redirectTo =', redirectTo);
 
   return supabase.auth.signInWithOAuth({
@@ -115,20 +108,20 @@ export function loginWithApple() {
 
 export async function logout() {
   await supabase.auth.signOut();
-  // clear any local caches if present
+  
   if (window.__unsubItems) window.__unsubItems();
   
-  // Clear in-memory state
+  
   if (window.wantApp) {
     window.wantApp.items = [];
   }
   
-  // Hard bounce to the current path to kill any stale state from SW/router
+  
   location.replace(window.location.pathname);
 }
 
 async function showAppForUser(user) {
-  // User is authenticated - show app
+  
   const authScreen = document.getElementById('auth-screen');
   const topbar = document.getElementById('topbar');
   const avatarBtn = document.getElementById('avatarBtn');
@@ -139,37 +132,37 @@ async function showAppForUser(user) {
   if (avatarBtn) avatarBtn.hidden = false;
   if (appMain) appMain.style.display = 'block';
   
-  // Set avatar with error handling for 429 rate limits
+  
   const img = document.getElementById('avatarImg');
   
-  // Check if elements exist before proceeding
+  
   if (!img || !avatarBtn) {
     console.warn('Avatar elements not found, skipping avatar setup');
     return;
   }
   
   if (user.user_metadata?.avatar_url) {
-    // Try to load the avatar image
+    
     img.src = user.user_metadata.avatar_url;
     img.style.display = 'block';
     
-    // Handle image load errors (like 429 rate limits)
+    
     img.onerror = () => {
       console.warn('Avatar failed to load, using fallback');
       img.style.display = 'none';
-      // Create a fallback avatar with user's initials
+      
       const initials = (user.user_metadata?.full_name || user.email || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
       avatarBtn.innerHTML = `<div class="avatar-fallback">${initials}</div>`;
     };
     
-    // Handle successful load
+    
     img.onload = () => {
-      // Clear any fallback
+      
       avatarBtn.innerHTML = '';
       avatarBtn.appendChild(img);
     };
   } else {
-    // No avatar URL - use fallback immediately
+    
     img.style.display = 'none';
     const initials = (user.user_metadata?.full_name || user.email || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
     avatarBtn.innerHTML = `<div class="avatar-fallback">${initials}</div>`;
@@ -177,21 +170,21 @@ async function showAppForUser(user) {
   
   img.alt = user.user_metadata?.full_name || user.email || 'Account';
 
-  // Wire avatar click
+  
   const btn = document.getElementById('avatarBtn');
   if (btn) {
     btn.onclick = (e) => {
       e.stopPropagation();
-      // Always use the bottom sheet modal for consistency
+      
       openAccountSheet(user);
     };
   }
 
-  // 1) Load initial items
+  
   try {
     const items = await loadItems();
     if (window.wantApp && window.wantApp.renderItems) {
-      window.wantApp.items = items; // Store items in the instance
+      window.wantApp.items = items; 
       window.wantApp.renderItems(items);
     } else {
       console.warn('WantApp instance not ready yet');
@@ -200,7 +193,7 @@ async function showAppForUser(user) {
     console.error('Failed to load items:', error);
   }
 
-  // 2) Realtime sync
+  
   if (window.__unsubItems) window.__unsubItems();
   window.__unsubItems = subscribeItems(
     (row) => {
@@ -217,7 +210,7 @@ async function showAppForUser(user) {
 }
 
 function showLoginScreen() {
-  // Not authenticated - show login screen
+  
   const authScreen = document.getElementById('auth-screen');
   const topbar = document.getElementById('topbar');
   const avatarBtn = document.getElementById('avatarBtn');
@@ -228,11 +221,11 @@ function showLoginScreen() {
   if (avatarBtn) avatarBtn.hidden = true;
   if (appMain) appMain.style.display = 'none';
 
-  // Google login with loading spinner
+  
   document.getElementById('btn-google').onclick = () => {
     const btn = document.getElementById('btn-google');
     
-    // Show loading state
+    
     btn.innerHTML = `
       <div class="auth-loading-spinner">
         <div class="spinner"></div>
@@ -241,17 +234,17 @@ function showLoginScreen() {
     `;
     btn.disabled = true;
     
-    // Start OAuth flow
+    
     loginWithGoogle();
   };
 }
 
 function openAccountSheet(user) {
-    // Populate user data
+    
     const name = user.user_metadata?.name || user.user_metadata?.full_name || user.email?.split('@')[0] || '—';
     const email = user.email || '—';
     
-    // Create the account sheet HTML
+    
     const html = `
         <header class="sheet-header">
             <h2>Account</h2>
@@ -268,7 +261,7 @@ function openAccountSheet(user) {
             <hr class="sheet-divider" />
             <button id="btn-logout" class="account-danger">
                 <span class="icon" aria-hidden="true">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http:
                         <path d="M16 17L21 12M21 12L16 7M21 12H9M9 3H7.8C6.11984 3 5.27976 3 4.63803 3.32698C4.07354 3.6146 3.6146 4.07354 3.32698 4.63803C3 5.27976 3 6.11984 3 7.8V16.2C3 17.8802 3 18.7202 3.32698 19.362C3.6146 19.9265 4.07354 20.3854 4.63803 20.673C5.27976 21 6.11984 21 7.8 21H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                 </span>
@@ -277,10 +270,10 @@ function openAccountSheet(user) {
         </div>
     `;
     
-    // Use the shared sheet system
+    
     openSheet(html);
     
-    // Wire logout button after the sheet is open
+    
     setTimeout(() => {
         const logoutBtn = document.getElementById('btn-logout');
         if (logoutBtn) {
@@ -341,90 +334,90 @@ function positionPopoverBelow(pop, anchorEl) {
 
 
 
-// Cloudflare Worker API functions (DISABLED - Local storage only)
-// const LIST_ID = localStorage.getItem('want.syncKey') || 'want-main';
 
-// async function loadItems() {
-//     try {
-//         console.log(`Fetching items from ${API}/items?listId=${encodeURIComponent(LIST_ID)}`);
-//         const r = await fetch(`${API}/items?listId=${encodeURIComponent(LIST_ID)}`);
-//         
-//         if (!r.ok) {
-//             console.error(`Worker API error: ${r.status} ${r.statusText}`);
-//             const errorText = await r.text();
-//             console.error('Error response:', errorText);
-//             throw new Error(`Worker API error: ${r.status} ${r.statusText}`);
-//         }
-//         
-//         const responseText = await r.text();
-//         console.log('Worker response:', responseText);
-//         
-//         const data = JSON.parse(responseText);
-//         const { items } = data;
-//         return items || [];
-//     } catch (error) {
-//         console.error('Error in loadItems:', error);
-//         throw error;
-//     }
-// }
 
-// async function saveItemRemote(item) {
-//     try {
-//         console.log(`Saving item to ${API}/items`);
-//         const r = await fetch(`${API}/items`, {
-//             method: "POST",
-//             headers: { "Content-Type": "application/json" },
-//             body: JSON.stringify({ listId: LIST_ID, item })
-//         });
-//         
-//         if (!r.ok) {
-//             console.error(`Worker API error: ${r.status} ${r.statusText}`);
-//             const errorText = await r.text();
-//             console.error('Error response:', errorText);
-//             throw new Error(`Worker API error: ${r.status} ${r.statusText}`);
-//         }
-//         
-//         const result = await r.json();
-//         return result;
-//     } catch (error) {
-//         console.error('Error in saveItemRemote:', error);
-//         throw error;
-//     }
-// }
 
-// async function deleteItemRemote(id) {
-//     try {
-//         console.log(`Deleting item from ${API}/items?id=${encodeURIComponent(id)}&listId=${encodeURIComponent(LIST_ID)}`);
-//         const r = await fetch(`${API}/items?id=${encodeURIComponent(id)}&listId=${encodeURIComponent(LIST_ID)}`, {
-//             method: "DELETE"
-//         });
-//         
-//         if (!r.ok) {
-//             console.error(`Worker API error: ${r.status} ${r.statusText}`);
-//             const errorText = await r.text();
-//             console.error('Error response:', errorText);
-//             throw new Error(`Worker API error: ${r.status} ${r.statusText}`);
-//         }
-//         
-//         const result = await r.json();
-//         return result;
-//     } catch (error) {
-//         console.error('Error in deleteItemRemote:', error);
-//         throw error;
-//     }
-// }
 
-// Main application logic
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 export class WantApp {
     constructor() {
         this.db = new WantDB();
         this.itemManager = new ItemManager(this.db);
-        this.selectedStore = null; // null = All
+        this.selectedStore = null; 
         this.pasteTimer = null;
-        this.addInFlight = false; // NEW: prevents double-firing
-        this.items = []; // Initialize items array
+        this.addInFlight = false; 
+        this.items = []; 
         
-        // Wait for DOM to be ready before initializing
+        
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
                 this.init();
@@ -435,37 +428,37 @@ export class WantApp {
     }
 
     async init() {
-        // Initialize Supabase auth
+        
         await authInit();
         
-        // Wire UI immediately when DOM is ready
+        
         this.wireUI();
         this.enableGlobalPaste();
         this.hydrateFromQueryParams();
         
-        // Initialize database (keep for local caching if needed)
+        
         await this.db.init();
         
-        // Guard duplicate IDs forever
+        
         ['openAddBtn','addItemBtn','urlInput','addForm'].forEach(id => {
             const els = document.querySelectorAll('#'+id);
             if (els.length > 1) console.warn('Duplicate id:', id, els);
         });
         
-        // Restore selection on load (optional)
+        
         try {
             const s = localStorage.getItem('want.selectedStore');
             if (s !== null && s !== "") this.selectedStore = s;
         } catch {}
         
-        // Process hash for add.html redirects
+        
         this.processHashAdd();
         
-        // Check for success message from add.html
+        
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('added') === 'true') {
             this.showToast('Item saved to Want');
-            // Clean up URL
+            
             window.history.replaceState({}, document.title, window.location.pathname);
         }
     }
@@ -473,14 +466,14 @@ export class WantApp {
 
 
     wireUI() {
-        const openAddBtn = document.getElementById('openAddBtn');        // "+ Add"
-        const headerSettingsBtn = document.getElementById('settingsBtn'); // gear icon
+        const openAddBtn = document.getElementById('openAddBtn');        
+        const headerSettingsBtn = document.getElementById('settingsBtn'); 
 
-        // Always mark as non-submit buttons to avoid form submissions
+        
         openAddBtn?.setAttribute('type', 'button');
         headerSettingsBtn?.setAttribute('type', 'button');
 
-        // Log helpful errors if buttons are not found
+        
         if (!openAddBtn) console.warn('openAddBtn not found');
         if (!headerSettingsBtn) console.warn('settingsBtn not found');
 
@@ -490,26 +483,26 @@ export class WantApp {
         headerSettingsBtn?.removeEventListener('click', () => this.showSettingsSheet());
         headerSettingsBtn?.addEventListener('click', () => this.showSettingsSheet(), { passive: true });
 
-        // Swipe to close is handled by the bottom sheet component
+        
 
-        // Form submission will be handled by attachAddFormHandler()
+        
 
-        // URL field auto-extraction and other handlers will be attached dynamically
+        
 
-        // More menu controller
+        
         this.setupMoreMenu();
 
-        // Scroll shadow effect
+        
         this.setupScrollShadow();
 
-        // Single click delegation for delete buttons
+        
         this.setupDeleteDelegation();
 
     }
 
     enableGlobalPaste() {
         window.addEventListener('paste', (e) => {
-            // If user is typing in an input/textarea or a modal is open, do NOT auto-add
+            
             const active = document.activeElement;
             const typing = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
             const modalOpen = !!document.querySelector('.sheet.is-open');
@@ -519,7 +512,7 @@ export class WantApp {
             if (!text) return;
 
             if (typing || modalOpen) {
-                // Existing behavior: let the paste go to the input (or the modal's URL field handler will pick it up)
+                
                 return;
             }
 
@@ -539,7 +532,7 @@ export class WantApp {
         if (u) {
             const url = decodeURIComponent(u.trim());
             if (isProbablyUrl(url)) {
-                // Clear query params immediately to prevent duplicate processing
+                
                 history.replaceState(null, '', location.pathname);
                 this.handleUrlPaste(url);
             }
@@ -547,7 +540,7 @@ export class WantApp {
     }
 
     async handleUrlPaste(url) {
-        // Open the Add sheet, pre-fill the URL input, start auto-extraction
+        
         this.showAddSheet();
         const urlInput = document.getElementById('urlInput');
         if (urlInput) {
@@ -565,7 +558,7 @@ export class WantApp {
             <form id="addForm">
                 <div class="form-group">
                     <label for="urlInput">URL *</label>
-                    <input type="url" id="urlInput" name="url" required placeholder="https://example.com">
+                    <input type="url" id="urlInput" name="url" required placeholder="https:
                 </div>
 
                 <div id="metaPreview" class="hidden preview">
@@ -592,7 +585,7 @@ export class WantApp {
                     </div>
                     <div class="form-group">
                         <label for="imageInput">Image URL</label>
-                        <input type="url" id="imageInput" name="image" placeholder="https://example.com/image.jpg">
+                        <input type="url" id="imageInput" name="image" placeholder="https:
                     </div>
                 </div>
 
@@ -604,20 +597,20 @@ export class WantApp {
         
         openSheet(html);
         
-        // Focus the URL input
+        
         setTimeout(() => {
             const urlInput = document.getElementById('urlInput');
             if (urlInput) urlInput.focus();
         }, 100);
         
-        // Attach form handler
+        
         this.attachAddFormHandler();
     }
 
     hideAddSheet() {
         closeSheet();
         
-        // Clear form
+        
         const form = document.getElementById('addForm');
         if (form) form.reset();
         
@@ -655,7 +648,7 @@ export class WantApp {
         
         openSheet(html);
         
-        // Attach settings handlers
+        
         this.attachSettingsHandlers();
     }
 
@@ -670,10 +663,10 @@ export class WantApp {
 
         if (!form || !addBtn || !urlInput) return;
 
-        // Remove existing handlers
+        
         form.removeEventListener('submit', this.handleAddFormSubmit);
         
-        // Add new handler
+        
         this.handleAddFormSubmit = async (e) => {
             e.preventDefault();
             const raw = urlInput.value.trim();
@@ -697,13 +690,13 @@ export class WantApp {
         
         form.addEventListener('submit', this.handleAddFormSubmit);
 
-        // URL field auto-extraction
+        
         urlInput.addEventListener('input', () => {
             this.updateAddButton(!!urlInput.value.trim());
         });
         
         urlInput.addEventListener('paste', (e) => {
-            // Let the paste happen first, then process
+            
             setTimeout(() => {
                 const value = urlInput.value.trim();
                 this.updateAddButton(!!value);
@@ -714,7 +707,7 @@ export class WantApp {
             this.updateAddButton(!!urlInput.value.trim());
         });
 
-        // Toggle advanced fields
+        
         const toggleAdvanced = document.getElementById('toggleAdvanced');
         if (toggleAdvanced) {
             toggleAdvanced.addEventListener('click', () => {
@@ -724,7 +717,7 @@ export class WantApp {
     }
 
     attachSettingsHandlers() {
-        // Export/Import
+        
         const exportBtn = document.getElementById('exportBtn');
         const importBtn = document.getElementById('importBtn');
         const importFile = document.getElementById('importFile');
@@ -755,7 +748,7 @@ export class WantApp {
     async loadItems() {
         try {
             const items = await this.db.getAllItems();
-            this.items = items; // Store items in instance
+            this.items = items; 
             this.renderItems(items);
         } catch (error) {
             console.error('Error loading items:', error);
@@ -769,7 +762,7 @@ export class WantApp {
         if (items.length === 0) {
             grid.innerHTML = '';
             emptyState.style.display = 'block';
-            // Update store tags even when no items
+            
             this.renderStoreTags(items);
             return;
         }
@@ -777,30 +770,30 @@ export class WantApp {
         emptyState.style.display = 'none';
         grid.innerHTML = items.map(item => this.createItemCard(item)).join('');
         
-        // Update store tags with current items
+        
         this.renderStoreTags(items);
         
-        // More menu events are handled by delegation in setupMoreMenu()
+        
     }
 
-    // Real-time sync methods for Supabase
+    
     onItemAdded(item) {
-        // Check if item already exists to avoid duplicates
+        
         const existingItem = this.items.find(i => i.id === item.id);
         if (existingItem) return;
         
-        // Add to local array
+        
         this.items.unshift(item);
         
-        // Re-render the grid
+        
         this.renderItems(this.items);
     }
 
     onItemDeleted(itemId) {
-        // Remove from local array
+        
         this.items = this.items.filter(item => item.id !== itemId);
         
-        // Re-render the grid
+        
         this.renderItems(this.items);
     }
 
@@ -809,8 +802,8 @@ export class WantApp {
     normalizeUrl(str) {
         const s = String(str).trim();
         if (!s) return "";
-        if (/^https?:\/\//i.test(s)) return s;
-        if (/^[\w.-]+\.[a-z]{2,}([\/?#].*)?$/i.test(s)) return `https://${s}`;
+        if (/^https?:\/\
+        if (/^[\w.-]+\.[a-z]{2,}([\/?#].*)?$/i.test(s)) return `https:
         return s;
     }
 
@@ -824,28 +817,28 @@ export class WantApp {
 
     proxiedImage(url, w = 800, h = 800) {
         if (!url) return "";
-        return `https://images.weserv.nl/?url=${encodeURIComponent(url)}&w=${w}&h=${h}&fit=cover`;
+        return `https:
     }
 
     async buildItemFromUrl(url) {
         const host = this.hostnameOf(url);
-        const meta = this.extractBasicMetadata(url); // Use local fallback instead of Worker
+        const meta = this.extractBasicMetadata(url); 
 
-        // Enhanced image handling for problematic sites
+        
         let original = meta?.image || '';
         let proxied = '';
-        let fallback = `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
+        let fallback = `https:
 
-        // Special handling for known problematic sites
+        
         if (host.includes('zara.com')) {
-            fallback = 'https://www.google.com/s2/favicons?domain=zara.com&sz=128&scale=2';
+            fallback = 'https:
         } else if (host.includes('hm.com') || host.includes('h&m')) {
-            fallback = 'https://www.google.com/s2/favicons?domain=hm.com&sz=128&scale=2';
+            fallback = 'https:
         } else if (host.includes('amazon.')) {
-            fallback = 'https://www.google.com/s2/favicons?domain=amazon.com&sz=128&scale=2';
+            fallback = 'https:
         }
 
-        // Only try to proxy if we have an original image and it's not from a problematic site
+        
         if (original && !host.includes('zara.com') && !host.includes('hm.com') && !host.includes('amazon.')) {
             proxied = this.proxiedImage(original);
         }
@@ -856,43 +849,43 @@ export class WantApp {
             url,
             title: meta?.title || this.getDomainDisplayName(host),
             price: meta?.price || '',
-            image: withStableBust(proxied || fallback, createdAt), // stable cache bust
-            originalImage: original, // keep for onerror fallback in render
+            image: withStableBust(proxied || fallback, createdAt), 
+            originalImage: original, 
             domain: this.normalizedDomainFrom(url),
             createdAt,
         };
     }
 
-    // Legacy method - no longer used (replaced by addItemDirectly)
+    
 
-    // Load items from Cloudflare Worker (DISABLED)
-    // async loadItemsFromWorker() {
-    //     try {
-    //         console.log('Loading items from Cloudflare Worker...');
-    //         const items = await loadItems();
-    //         
-    //         // Update local items array
-    //         this.items = items;
-    //         
-    //         // Also cache in IndexedDB for offline access
-    //         for (const item of items) {
-    //             await this.db.upsertItem(item);
-    //         }
-    //         
-    //         console.log(`Loaded ${items.length} items from Worker`);
-    //         
-    //         // Render the grid
-    //         await this.renderGridFiltered();
-    //     } catch (error) {
-    //         console.error('Error loading items from Worker:', error);
-    //         // Fallback to local IndexedDB
-    //         await this.renderGridFiltered();
-    //     }
-    // }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
 
 
-    // Returns eTLD+1 in most cases (simple heuristic, handles common multi-part TLDs)
+    
     getMainDomain(urlStr) {
         try {
             const host = new URL(urlStr).hostname.replace(/^www\./i, "");
@@ -910,13 +903,13 @@ export class WantApp {
         }
     }
 
-    // When saving items, ensure we store a normalized domain
+    
     normalizedDomainFrom(urlStr) {
         const d = this.getMainDomain(urlStr);
         return d || (function(){ try { return new URL(urlStr).hostname.replace(/^www\./i,""); } catch { return ""; }})();
     }
 
-    // Store tags functionality
+    
     getDomainCounts(items) {
         const counts = new Map();
         for (const it of items) {
@@ -931,18 +924,18 @@ export class WantApp {
         const el = document.getElementById('storeTags');
         if (!el) return;
 
-        // Hide tags when there are no items
+        
         if (items.length === 0) {
             el.style.display = 'none';
             return;
         }
 
-        // Show tags when there are items
+        
         el.style.display = 'block';
 
         const counts = this.getDomainCounts(items);
         const entries = Array.from(counts.entries())
-            .sort((a, b) => a[0].localeCompare(b[0])); // sort alphabetically
+            .sort((a, b) => a[0].localeCompare(b[0])); 
 
         const chips = [];
         chips.push(`
@@ -961,33 +954,33 @@ export class WantApp {
         
         el.innerHTML = chips.join("");
 
-        // Events (delegate)
+        
         el.querySelectorAll('.tag-chip').forEach(btn => {
             btn.addEventListener('click', () => {
                 const store = btn.dataset.store || null;
                 console.log('Tag clicked:', { store, currentItems: this.items?.length });
                 
                 this.selectedStore = store;
-                // persist (optional)
+                
                 try { 
                     localStorage.setItem('want.selectedStore', store ?? ""); 
                 } catch {}
-                this.renderStoreTags(items); // re-highlight
-                this.renderGridFiltered();   // apply filter
+                this.renderStoreTags(items); 
+                this.renderGridFiltered();   
             });
         });
     }
 
-    // Refresh store tags with current items
+    
     async refreshStoreTags() {
-        // Use the items already loaded from Supabase
+        
         if (this.items) {
             this.renderStoreTags(this.items);
         }
     }
 
     async renderGridFiltered() {
-        // Use the items already loaded from Supabase (this.items)
+        
         if (!this.items) {
             console.warn('No items available for filtering');
             return;
@@ -1003,21 +996,21 @@ export class WantApp {
             filtered: filtered.length
         });
 
-        // Reuse existing renderItems but pass filtered
+        
         this.renderItems(filtered);
 
-        // Always (re)build tags from the full list so counts are accurate
+        
         this.renderStoreTags(this.items);
     }
 
-    // Escape HTML to prevent XSS
+    
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
 
-    // Swipe to close is now handled by the bottom sheet component
+    
 
         renderOverflowButton(item) {
         return `
@@ -1036,43 +1029,24 @@ export class WantApp {
         const domain = item.domain || this.hostnameOf(item.url);
         const title = item.title || domain;
         
-        // Check for video first, then image
-        const hasVideo = item.video && item.video.trim();
+        
         const hasRealImage = item.image && !this.isFavicon(item.image);
 
         const thumbClasses = [
             'thumb',
-            (hasVideo || hasRealImage) ? '' : 'placeholder no-image'
+            hasRealImage ? '' : 'placeholder no-image'
         ].join(' ').trim();
 
-        let mediaTag = '';
-        if (hasVideo) {
-            mediaTag = `<div class="video-container" style="position: relative; width: 100%; height: 100%;">
-                <video
-                    src="${this.escapeHtml(item.video)}"
-                    muted
-                    loop
-                    playsinline
-                    style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px;"
-                    onloadstart="this.parentElement.classList.add('loaded')"
-                    onclick="this.play(); this.nextElementSibling.style.display='none';">
-                </video>
-                <div class="play-button-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.7); border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2;">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
-                        <path d="M8 5v14l11-7z"/>
-                    </svg>
-                </div>
-            </div>`;
-        } else if (hasRealImage) {
-            mediaTag = `<img src="${this.escapeHtml(item.image)}" alt="" loading="lazy" referrerpolicy="no-referrer"
-                   onload="this.parentElement.classList.add('loaded')" />`;
-        }
+        const imgTag = hasRealImage
+            ? `<img src="${this.escapeHtml(item.image)}" alt="" loading="lazy" referrerpolicy="no-referrer"
+                   onload="this.parentElement.classList.add('loaded')" />`
+            : ''; 
 
         return `
             <article class="item-card" data-id="${item.id}">
                 <a href="${this.escapeHtml(item.url)}" target="_blank" rel="noopener" class="card-link">
                     <div class="${thumbClasses}">
-                        ${mediaTag}
+                        ${imgTag}
                     </div>
                     <div class="meta">
                         <h3 class="title">${this.escapeHtml(title)}</h3>
@@ -1085,61 +1059,61 @@ export class WantApp {
         `;
     }
 
-    // Render a single item card (for optimistic UI)
+    
     renderItemCard(item) {
         const grid = document.getElementById('itemsGrid');
         const emptyState = document.getElementById('emptyState');
         
-        // Hide empty state if we have items
+        
         emptyState.style.display = 'none';
         
-        // Create the card HTML
+        
         const cardHtml = this.createItemCard(item);
         
-        // Add optimistic styling if needed
+        
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = cardHtml;
         const card = tempDiv.firstElementChild;
         
         if (item._optimistic) {
             card.classList.add('optimistic');
-            // Shimmer effect is handled by CSS, no inline opacity needed
+            
         }
         
-        // Insert at the beginning of the grid
+        
         grid.insertBefore(card, grid.firstChild);
         
-        // Update store tags when adding first item
+        
         if (this.items.length === 0) {
-            // This is the first item, update store tags immediately
+            
             this.renderStoreTags([item]);
         }
         
-        // Overflow button events are handled by delegation in setupMoreMenu()
+        
     }
 
     getDefaultImage(domain) {
-        // Try to get favicon from domain
-        return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+        
+        return `https:
     }
 
     async upsertItem(item) {
         try {
-            // Check if item with same URL exists
+            
             const existingItem = await this.db.getItemByUrl(item.url);
             if (existingItem) {
-                // Update existing item
+                
                 const updatedItem = { 
                     ...existingItem, 
                     title: item.title,
                     price: item.price,
                     image: item.image,
-                    createdAt: Date.now() // Refresh timestamp
+                    createdAt: Date.now() 
                 };
                 await this.db.db.put(this.db.storeName, updatedItem);
                 return existingItem.id;
             } else {
-                // Add new item
+                
                 const newItem = await this.db.addItem(item);
                 return newItem.id;
             }
@@ -1151,13 +1125,13 @@ export class WantApp {
 
     async deleteItem(id) {
         try {
-            // Delete from Supabase
+            
             await deleteItem(id);
             
-            // Update local items array
+            
             this.items = this.items.filter(item => item.id !== id);
             
-            // Re-render the grid with updated items
+            
             this.renderItems(this.items);
             this.showToast('Item deleted');
         } catch (error) {
@@ -1166,13 +1140,13 @@ export class WantApp {
         }
     }
 
-    // Helper to detect favicons
+    
     isFavicon(url) {
         if (!url) return false;
         return /google\.com\/s2\/favicons/i.test(url);
     }
 
-    // 1) URL helpers
+    
     isProbablyUrl(str) {
         try {
             const u = new URL(str);
@@ -1183,8 +1157,8 @@ export class WantApp {
     }
 
     normalizeUrl(str) {
-        if (/^https?:\/\//i.test(str)) return str.trim();
-        if (/^[\w.-]+\.[a-z]{2,}([\/?#].*)?$/i.test(str)) return `https://${str.trim()}`;
+        if (/^https?:\/\
+        if (/^[\w.-]+\.[a-z]{2,}([\/?#].*)?$/i.test(str)) return `https:
         return str.trim();
     }
 
@@ -1205,7 +1179,7 @@ export class WantApp {
             return;
         }
 
-        // Check if URL is valid
+        
         if (!isProbablyUrl(url)) {
             console.log('URL not valid:', url);
             this.hidePreview();
@@ -1215,14 +1189,14 @@ export class WantApp {
 
         console.log('Processing URL:', url);
 
-        // Enable add button for valid URL
+        
         this.updateAddButton(true);
 
-        // Show loading state
+        
         this.showPreviewLoading();
 
         try {
-            // Use the new Worker endpoint for robust extraction
+            
             console.log('Fetching metadata from worker for:', url);
             const res = await fetch(`${EXTRACT_ENDPOINT}?url=${encodeURIComponent(url)}`, {
                 mode: 'cors',
@@ -1237,12 +1211,12 @@ export class WantApp {
                 const meta = await res.json();
                 console.log('Preview data (Worker):', meta);
                 
-                // Check if worker returned useful data
+                
                 if (meta && (meta.title || meta.image || meta.price)) {
                     this.updatePreview(meta);
                     this.showPreview();
                     
-                    // Update advanced fields if they're visible
+                    
                     if (!document.getElementById('advanced').classList.contains('hidden')) {
                         this.setAdvancedFormValues(meta);
                     }
@@ -1257,7 +1231,7 @@ export class WantApp {
             }
         } catch (error) {
             console.error('Error handling URL input:', error);
-            // Show fallback preview
+            
             const fallbackMeta = this.extractBasicMetadata(url);
             console.log('Using fallback metadata:', fallbackMeta);
             this.updatePreview(fallbackMeta);
@@ -1267,86 +1241,86 @@ export class WantApp {
 
 
 
-    // async enrichFromMeta(url) {
-    //     if (!this.META_ENDPOINT) return null;
-    //     try {
-    //         const r = await fetch(`${this.META_ENDPOINT}/meta?url=${encodeURIComponent(url)}`, {
-    //             method: 'GET',
-    //             mode: 'cors',
-    //             headers: {
-    //                 'Accept': 'application/json',
-    //             }
-    //         });
-    //         if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
-    //         const d = await r.json();
-    //         
-    //         if (d.error) {
-    //             console.log('Worker returned error:', d.error);
-    //             return null;
-    //         }
-    //         
-    //         // Process image URL - store original for fallback
-    //         let image = '';
-    //         if (d.image) {
-    //             // Store original URL for fallback, use weserv.nl for display
-    //         }
-    //         
-    //         return {
-    //             title: d.title || '',
-    //             image,
-    //             price: d.price || '',
-    //         };
-    //     } catch (error) {
-    //         console.log('enrichFromMeta failed:', error.message);
-    //         // Return null to trigger fallback
-    //         return null;
-    //     }
-    // }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
-    // Fallback metadata extraction when worker fails
+    
     extractBasicMetadata(url) {
         const host = this.hostnameOf(url);
         
-        // Enhanced fallback image handling for problematic sites
-        let fallbackImg = `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
         
-        // Special handling for known problematic sites with better favicon URLs
+        let fallbackImg = `https:
+        
+        
         if (host.includes('zara.com')) {
-            fallbackImg = 'https://www.google.com/s2/favicons?domain=zara.com&sz=128&scale=2';
+            fallbackImg = 'https:
         } else if (host.includes('hm.com') || host.includes('h&m')) {
-            fallbackImg = 'https://www.google.com/s2/favicons?domain=hm.com&sz=128&scale=2';
+            fallbackImg = 'https:
         } else if (host.includes('amazon.')) {
-            fallbackImg = 'https://www.google.com/s2/favicons?domain=amazon.com&sz=128&scale=2';
+            fallbackImg = 'https:
         }
         
-        // Try to extract title from URL path with better parsing
+        
         let title = this.getDomainDisplayName(host);
         try {
             const urlObj = new URL(url);
             const pathParts = urlObj.pathname.split('/').filter(part => part.length > 0);
             
-            // Enhanced title extraction for problematic e-commerce sites
+            
             if (host.includes('zara.com') || host.includes('hm.com') || host.includes('amazon.')) {
-                // Site-specific patterns
+                
                 let productPatterns = [];
                 
                 if (host.includes('zara.com')) {
-                    // Zara specific patterns
+                    
                     productPatterns = [
                         /\/product\/([^\/\?]+)/i,
-                        /\/[a-z-]+\/([^\/\?]+)/i, // e.g., /women/dresses/product-name
-                        /\/[A-Z0-9]{8,}/i, // Zara product codes
+                        /\/[a-z-]+\/([^\/\?]+)/i, 
+                        /\/[A-Z0-9]{8,}/i, 
                     ];
                 } else if (host.includes('amazon.')) {
-                    // Amazon specific patterns
+                    
                     productPatterns = [
-                        /\/dp\/([A-Z0-9]{10})/i, // Amazon ASIN
-                        /\/gp\/product\/([A-Z0-9]{10})/i, // Amazon product
-                        /\/[A-Z0-9]{10,}/i, // Long alphanumeric (likely product ID)
-                        /\/[^\/]+\/dp\/([A-Z0-9]{10})/i, // Product with category
+                        /\/dp\/([A-Z0-9]{10})/i, 
+                        /\/gp\/product\/([A-Z0-9]{10})/i, 
+                        /\/[A-Z0-9]{10,}/i, 
+                        /\/[^\/]+\/dp\/([A-Z0-9]{10})/i, 
                     ];
                 } else {
-                    // Generic e-commerce patterns
+                    
                     productPatterns = [
                         /\/product\/([^\/\?]+)/i,
                         /\/item\/([^\/\?]+)/i,
@@ -1361,14 +1335,14 @@ export class WantApp {
                     if (match && match[1]) {
                         let productName = match[1]
                             .replace(/[-_]/g, ' ')
-                            .replace(/\.[^/.]+$/, '') // Remove file extensions
-                            .replace(/\?.*$/, '') // Remove query parameters
-                            .replace(/#.*$/, '') // Remove hash fragments
+                            .replace(/\.[^/.]+$/, '') 
+                            .replace(/\?.*$/, '') 
+                            .replace(/#.*$/, '') 
                             .trim();
                         
-                        // Special handling for Amazon ASINs - use a more descriptive title
+                        
                         if (host.includes('amazon.') && /^[A-Z0-9]{10}$/.test(productName)) {
-                            // For Amazon ASINs, try to get a better title from the URL path
+                            
                             const pathMatch = url.match(/\/[^\/]+\/dp\/[A-Z0-9]{10}\/?/i);
                             if (pathMatch) {
                                 const pathBeforeAsin = pathMatch[0].replace(/\/dp\/[A-Z0-9]{10}\/?/i, '');
@@ -1379,9 +1353,9 @@ export class WantApp {
                             }
                         }
                         
-                        // Special handling for Zara product codes
+                        
                         if (host.includes('zara.com') && /^[A-Z0-9]{8,}$/.test(productName)) {
-                            // For Zara product codes, try to get category from URL
+                            
                             const categoryMatch = url.match(/\/([a-z-]+)\/[A-Z0-9]{8,}/i);
                             if (categoryMatch && categoryMatch[1]) {
                                 productName = categoryMatch[1].replace(/[-_]/g, ' ');
@@ -1396,9 +1370,9 @@ export class WantApp {
                 }
             }
             
-            // Enhanced fallback to path-based extraction
+            
             if (pathParts.length > 0 && title === this.getDomainDisplayName(host)) {
-                // For Zara, try to get category from path
+                
                 if (host.includes('zara.com')) {
                     const categoryIndex = pathParts.findIndex(part => 
                         ['women', 'men', 'kids', 'home', 'beauty'].includes(part.toLowerCase())
@@ -1413,7 +1387,7 @@ export class WantApp {
                         }
                     }
                 }
-                // For Amazon, try to get category from path
+                
                 else if (host.includes('amazon.')) {
                     const categoryIndex = pathParts.findIndex(part => 
                         part.length > 3 && !/^[A-Z0-9]{10,}$/.test(part) && !/^\d+$/.test(part)
@@ -1425,20 +1399,20 @@ export class WantApp {
                         }
                     }
                 }
-                // Generic fallback
+                
                 else {
-                    // Use last meaningful path segment as title
+                    
                     const lastPart = pathParts[pathParts.length - 1];
                     if (lastPart && lastPart !== 'index.html' && lastPart !== 'index') {
-                        // Clean up the title
+                        
                         let cleanTitle = lastPart
                             .replace(/[-_]/g, ' ')
-                            .replace(/\.[^/.]+$/, '') // Remove file extensions
-                            .replace(/\?.*$/, '') // Remove query parameters
-                            .replace(/#.*$/, '') // Remove hash fragments
+                            .replace(/\.[^/.]+$/, '') 
+                            .replace(/\?.*$/, '') 
+                            .replace(/#.*$/, '') 
                             .trim();
                         
-                        // Only use if it's meaningful (not just numbers or single chars)
+                        
                         if (cleanTitle.length > 2 && !/^\d+$/.test(cleanTitle)) {
                             title = cleanTitle;
                         }
@@ -1446,7 +1420,7 @@ export class WantApp {
                 }
             }
             
-            // Try to extract from search params for e-commerce sites
+            
             const searchParams = urlObj.searchParams;
             if (searchParams.has('q') || searchParams.has('search')) {
                 const searchTerm = searchParams.get('q') || searchParams.get('search');
@@ -1455,7 +1429,7 @@ export class WantApp {
                 }
             }
         } catch (e) {
-            // Keep domain name as title
+            
         }
         
         return {
@@ -1466,7 +1440,7 @@ export class WantApp {
         };
     }
 
-    // Get user-friendly domain display names
+    
     getDomainDisplayName(host) {
         const domainMap = {
             'zara.com': 'Zara',
@@ -1519,8 +1493,8 @@ export class WantApp {
         const previewPrice = document.getElementById('previewPrice');
         const previewDomain = document.getElementById('previewDomain');
 
-        // Set image with proxy-first approach
-        const fallbackImg = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
+        
+        const fallbackImg = `https:
         
         if (image) {
             const original = image;
@@ -1531,9 +1505,9 @@ export class WantApp {
                 previewImg.src = proxied || fallbackImg;
                 previewImg.onerror = () => {
                     if (original && previewImg.src !== original) {
-                        previewImg.src = original; // fallback to original
+                        previewImg.src = original; 
                     } else {
-                        previewImg.src = fallbackImg; // final fallback to favicon
+                        previewImg.src = fallbackImg; 
                     }
                 };
             }
@@ -1562,7 +1536,7 @@ export class WantApp {
             advanced.classList.remove('hidden');
             toggleBtn.textContent = 'Hide details';
             
-            // Pre-fill advanced fields with current preview data
+            
             const urlInput = document.getElementById('urlInput');
             if (urlInput.value) {
                 this.handleUrlInput(urlInput.value.trim());
@@ -1614,25 +1588,25 @@ export class WantApp {
             this.showToast('Error importing data', 'error');
         }
         
-        // Reset file input
+        
         document.getElementById('importFile').value = '';
     }
 
     openEditForUrl(url) {
-        // Find the item by URL and open edit modal
+        
         this.db.getItemByUrl(url).then(item => {
             if (item) {
-                // Pre-fill the form with existing data
+                
                 document.getElementById('urlInput').value = item.url;
                 document.getElementById('titleInput').value = item.title;
                 document.getElementById('priceInput').value = item.price;
                 document.getElementById('imageInput').value = item.image;
                 
-                // Show advanced fields and update preview
+                
                 document.getElementById('advanced').classList.remove('hidden');
                 document.getElementById('toggleAdvanced').textContent = 'Hide details';
                 
-                // Update preview
+                
                 this.updatePreview({ 
                     title: item.title, 
                     image: item.image, 
@@ -1642,7 +1616,7 @@ export class WantApp {
                 this.showPreview();
                 this.updateAddButton(true);
                 
-                // Show the modal
+                
                 this.showModal();
             }
         }).catch(error => {
@@ -1650,7 +1624,7 @@ export class WantApp {
         });
     }
 
-    // Utility: toast
+    
     showToast(msg) {
         let t = document.getElementById('toast');
         if (!t) {
@@ -1674,21 +1648,21 @@ export class WantApp {
         const openMoreMenuFor = (targetBtn, itemId) => {
             moreCurrentId = itemId;
 
-            // First show the menu to get its dimensions
+            
             moreMenu.hidden = false;
             moreBackdrop.hidden = false;
             
-            // Compute position near the button
+            
             const r = targetBtn.getBoundingClientRect();
             const menuRect = moreMenu.getBoundingClientRect();
             const pad = 8;
             
-            // Calculate initial position (below the button)
-            // Use viewport coordinates directly since menu is position: fixed
+            
+            
             let top = r.bottom + pad;
             let left = r.left;
             
-            // Ensure menu doesn't go off-screen horizontally
+            
             if (left + menuRect.width > window.innerWidth - pad) {
                 left = window.innerWidth - menuRect.width - pad;
             }
@@ -1696,20 +1670,20 @@ export class WantApp {
                 left = pad;
             }
             
-            // Ensure menu doesn't go off-screen vertically
+            
             if (top + menuRect.height > window.innerHeight - pad) {
-                // Position above the button instead
+                
                 top = r.top - menuRect.height - pad;
             }
             if (top < pad) {
                 top = pad;
             }
             
-            // Apply position using viewport coordinates (no scroll offset needed for fixed positioning)
+            
             moreMenu.style.top = `${top}px`;
             moreMenu.style.left = `${left}px`;
             
-            // Debug logging
+            
             console.log('Menu positioned:', {
                 buttonRect: r,
                 menuRect: menuRect,
@@ -1721,7 +1695,7 @@ export class WantApp {
                 moreBackdrop.classList.add('active');
             });
 
-            // A11y
+            
             targetBtn.setAttribute('aria-expanded', 'true');
             moreMenu.focus?.();
         };
@@ -1731,19 +1705,19 @@ export class WantApp {
             moreBackdrop.hidden = true;
             moreMenu.hidden = true;
 
-            // Reset any expanded button
+            
             document.querySelectorAll('.overflow-btn[aria-expanded="true"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
             moreCurrentId = null;
         };
 
-        // Delegate click on overflow buttons
+        
         document.addEventListener('click', (e) => {
             const btn = e.target.closest?.('.overflow-btn');
             if (!btn) return;
             e.preventDefault();
             e.stopPropagation();
             
-            // Debug logging
+            
             console.log('Overflow button clicked:', {
                 id: btn.dataset.id,
                 rect: btn.getBoundingClientRect(),
@@ -1755,13 +1729,13 @@ export class WantApp {
             openMoreMenuFor(btn, btn.dataset.id);
         });
 
-        // Backdrop / outside click / ESC
+        
         moreBackdrop.addEventListener('click', closeMoreMenu);
         document.addEventListener('keydown', (e) => { 
             if (e.key === 'Escape' && !moreMenu.hidden) closeMoreMenu(); 
         });
 
-        // Menu actions
+        
         moreMenu.addEventListener('click', async (e) => {
             const actionBtn = e.target.closest('.menu-item');
             if (!actionBtn) return;
@@ -1774,7 +1748,7 @@ export class WantApp {
             }
 
             try {
-                // Get item from local items array (Supabase items are already loaded)
+                
                 console.log('Looking for item with ID:', moreCurrentId);
                 console.log('Available items:', this.items?.map(i => ({ id: i.id, title: i.title })));
                 
@@ -1801,7 +1775,7 @@ export class WantApp {
                         }
                     } catch(error) { 
                         console.log('Share cancelled or failed:', error);
-                        // Don't show error for user cancellation
+                        
                     }
                 }
 
@@ -1811,7 +1785,7 @@ export class WantApp {
                         if (navigator.clipboard?.writeText) {
                             await navigator.clipboard.writeText(url);
                         } else {
-                            // Fallback
+                            
                             const ta = document.createElement('textarea');
                             ta.value = url;
                             document.body.appendChild(ta);
@@ -1830,13 +1804,13 @@ export class WantApp {
                     const ok = confirm('Delete this item?');
                     if (ok) {
                         try {
-                            // Delete from Supabase
+                            
                             await deleteItem(item.id);
                             
-                            // Update local items array
+                            
                             this.items = this.items.filter(i => i.id !== item.id);
                             
-                            // Re-render the grid
+                            
                             this.renderItems(this.items);
                             this.showToast('Item deleted');
                         } catch (error) {
@@ -1880,7 +1854,7 @@ export class WantApp {
             const id = btn.getAttribute('data-id');
             if (!id) return;
 
-            // Confirm exactly once
+            
             if (!confirm('Delete this item?')) return;
 
             this.deleteItem(id);
@@ -1892,26 +1866,26 @@ export class WantApp {
         if (!h.startsWith('#add=')) return;
         try {
             const payload = JSON.parse(decodeURIComponent(h.slice(5)));
-            // Clear hash immediately to avoid re-processing on refresh/back
+            
             history.replaceState(null, '', location.pathname);
 
             const url = (payload.url || '').trim();
             if (!url) return;
 
-            // Prevent duplicate add while another is running
+            
             if (!window.pendingAdds) window.pendingAdds = new Set();
             if (window.pendingAdds.has(url)) return;
             window.pendingAdds.add(url);
 
-            // Show optimistic card (no opacity, just shimmer)
+            
             const tempId = this.addOptimisticCard(url);
 
-            // Enrich + write once
+            
             (async () => {
                 try {
-                    // If server already sent title/image/price, prefer them, otherwise enrich again if needed
+                    
                     const final = await this.itemManager.upsertFromMetaOrFetch(payload);
-                    await this.db.addOrUpdateItem(final); // single write
+                    await this.db.addOrUpdateItem(final); 
                     this.reconcileCard(tempId, final);
                     this.showToast('Item added');
                 } catch (e) {
@@ -1928,9 +1902,9 @@ export class WantApp {
         }
     }
 
-    // Direct add pipeline (optimistic UI)
     
-    // Show an optimistic placeholder card
+    
+    
     addOptimisticCard(url) {
         const id = `temp_${Date.now()}`;
         const card = {
@@ -1939,13 +1913,13 @@ export class WantApp {
             url,
             site: domainFrom(url),
             price: "",
-            image: "",       // <-- keep empty so we show placeholder, not favicon
+            image: "",       
             _optimistic: true,
             createdAt: Date.now(),
         };
-        this.renderItemCard(card); // existing renderer should handle "loading" skeleton by checking _optimistic or empty image
+        this.renderItemCard(card); 
         
-        // Add data-url attribute to the card for removal by URL
+        
         const renderedCard = document.querySelector(`[data-item-id="${id}"]`);
         if (renderedCard) {
             renderedCard.setAttribute('data-url', url);
@@ -1955,74 +1929,45 @@ export class WantApp {
     }
 
     removeOptimisticCardByUrl(url) {
-        console.log('Removing optimistic card for URL:', url);
-        
-        // Try to find the optimistic card by URL first
         const card = document.querySelector(`.item-card.optimistic[data-url="${CSS.escape(url)}"]`);
         if (card) {
-            console.log('Removing optimistic card by URL:', card);
             card.remove();
-            return;
         }
-        
-        // If not found by URL, try to find any optimistic card that might be for this URL
-        const optimisticCards = document.querySelectorAll('.item-card.optimistic');
-        optimisticCards.forEach(card => {
-            const cardUrl = card.getAttribute('data-url');
-            if (cardUrl === url) {
-                console.log('Removing optimistic card by URL match:', card);
-                card.remove();
-            }
-        });
     }
 
-    // Fetch meta from Worker (DISABLED - using local extraction)
-    // async fetchMeta(url) {
-    //     const r = await fetch(`${META_ENDPOINT}?url=${encodeURIComponent(url)}`, { mode: 'cors' });
-    //     if (!r.ok) throw new Error(`meta ${r.status}`);
-    //     const data = await r.json();
-    //     return {
-    //         title: data.title || domainFrom(url),
-    //         image: data.image || "",
-    //         price: data.price || "",
-    //     };
-    // }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
-    // Legacy method - no longer used (replaced by itemManager.createItemFromUrl)
+    
 
-    // Replace placeholder with real card or remove on error
+    
     reconcileCard(tempId, finalObj, err) {
-        console.log('Reconciling card:', tempId, finalObj, err);
-        
         if (err) {
-            this.removeItemCard(tempId);  // delete skeleton
-            this.showToast("Couldn't add link. Try again."); // small non-blocking toast
+            this.removeItemCard(tempId);  
+            this.showToast("Couldn't add link. Try again."); 
             return;
         }
         
-        // Count optimistic cards before removal
-        const optimisticCardsBefore = document.querySelectorAll('.item-card.optimistic').length;
-        console.log('Optimistic cards before removal:', optimisticCardsBefore);
         
-        // Remove ALL optimistic cards to ensure we don't have duplicates
-        const allOptimisticCards = document.querySelectorAll('.item-card.optimistic');
-        allOptimisticCards.forEach(card => {
-            console.log('Removing optimistic card:', card);
-            card.remove();
-        });
+        if (!this.updateItemCard(tempId, finalObj)) {
+            this.removeItemCard(tempId);
+            this.renderItemCard(finalObj);
+        }
         
-        // Count optimistic cards after removal
-        const optimisticCardsAfter = document.querySelectorAll('.item-card.optimistic').length;
-        console.log('Optimistic cards after removal:', optimisticCardsAfter);
         
-        // Add the real card
-        this.renderItemCard(finalObj);
-        
-        // Refresh store tags to include the new item
         this.refreshStoreTags();
     }
 
-    // Main direct-add flow
+    
     async addItemDirectly(url) {
         if (!window.pendingAdds) window.pendingAdds = new Set();
         if (window.pendingAdds.has(url)) {
@@ -2031,23 +1976,18 @@ export class WantApp {
         }
         window.pendingAdds.add(url);
         
-        // Check if we already have any optimistic cards and remove them
-        const existingOptimisticCards = document.querySelectorAll('.item-card.optimistic');
-        if (existingOptimisticCards.length > 0) {
-            console.log('Found existing optimistic cards, removing them:', existingOptimisticCards.length);
-            existingOptimisticCards.forEach(card => {
-                console.log('Removing existing optimistic card:', card);
-                card.remove();
-            });
-        }
+        
+        const adding = new Set();
+        if (adding.has(url)) return;
+        adding.add(url);
 
         try {
-            // Create optimistic card first
+            
             const tempId = this.addOptimisticCard(url);
             
             let metadata = null;
             
-            // Try to fetch metadata from worker first
+            
             try {
                 console.log('Fetching metadata from worker for addItemDirectly:', url);
                 const response = await fetch(`${EXTRACT_ENDPOINT}?url=${encodeURIComponent(url)}`);
@@ -2057,7 +1997,7 @@ export class WantApp {
                     metadata = await response.json();
                     console.log('Worker metadata for addItemDirectly:', metadata);
                     
-                    // Check if worker returned useful data
+                    
                     if (!metadata || (!metadata.title && !metadata.image && !metadata.price)) {
                         console.log('Worker returned empty data, using fallback');
                         metadata = null;
@@ -2072,34 +2012,30 @@ export class WantApp {
                 metadata = null;
             }
             
-            // If worker failed or returned no useful data, use local fallback
+            
             if (!metadata) {
                 console.log('Using local metadata fallback for:', url);
                 metadata = this.extractBasicMetadata(url);
             }
             
-            // Add item to Supabase
+            
             const item = await addItem({
                 url: url,
                 title: metadata.title || '',
                 image: metadata.image || '',
-                video: metadata.video || '',
                 price: metadata.price || ''
             });
             
-            // When the worker returns, update only if it's a real image or video
-            if (item && item.video && item.video.trim()) {
-                // Keep the video
-            } else if (item && item.image && !this.isFavicon(item.image)) {
-                // Keep the real image
+            
+            if (item && item.image && !this.isFavicon(item.image)) {
+                
             } else if (item) {
-                // Clear favicon or empty image
+                
                 item.image = '';
-                item.video = '';
             }
             
             if (item) {
-                // Replace optimistic card with real card
+                
                 this.reconcileCard(tempId, item);
                 this.showToast('Item added successfully');
             }
@@ -2109,10 +2045,11 @@ export class WantApp {
             this.showToast(error?.message === 'Item already exists' ? 'Item already exists' : 'Failed to add item');
         } finally {
             window.pendingAdds.delete(url);
+            adding.delete(url);
         }
     }
 
-    // Helper methods for card manipulation
+    
     removeItemCard(id) {
         const card = document.querySelector(`[data-item-id="${id}"]`);
         if (card) {
@@ -2123,7 +2060,7 @@ export class WantApp {
     updateItemCard(id, obj) {
         const card = document.querySelector(`[data-item-id="${id}"]`);
         if (card) {
-            // Update the card content in-place
+            
             const titleEl = card.querySelector('.title');
             const priceEl = card.querySelector('.price');
             const domainEl = card.querySelector('.domain');
@@ -2133,70 +2070,29 @@ export class WantApp {
             if (priceEl) priceEl.textContent = obj.price || '';
             if (domainEl) domainEl.textContent = obj.domain || this.hostnameOf(obj.url) || '';
             
-            // Handle media replacement (placeholder → real image/video)
-            const hasVideo = obj.video && obj.video.trim();
-            const hasRealImage = obj.image && !this.isFavicon(obj.image);
             
-            if (hasVideo || hasRealImage) {
-                // Remove placeholder classes
+            if (obj.image && !this.isFavicon(obj.image) && thumb) {
+                
                 thumb.classList.remove('placeholder', 'no-image');
                 
-                // Remove any existing media
-                const existingMedia = thumb.querySelector('img, video');
-                if (existingMedia) existingMedia.remove();
                 
-                if (hasVideo) {
-                    // Create video container with play button overlay
-                    const videoContainer = document.createElement('div');
-                    videoContainer.className = 'video-container';
-                    videoContainer.style.cssText = 'position: relative; width: 100%; height: 100%;';
+                const img = document.createElement('img');
+                img.src = obj.image;
+                img.alt = '';
+                img.loading = 'lazy';
+                img.referrerPolicy = 'no-referrer';
+                img.onload = function() {
+                    this.parentElement.classList.add('loaded');
                     
-                    // Create video element
-                    const video = document.createElement('video');
-                    video.src = obj.video;
-                    video.muted = true;
-                    video.loop = true;
-                    video.playsInline = true;
-                    video.style.cssText = 'width: 100%; height: 100%; object-fit: cover; border-radius: 12px;';
-                    video.onloadstart = function() {
-                        this.parentElement.classList.add('loaded');
-                        // Remove optimistic state when video loads
-                        card.classList.remove('optimistic');
-                    };
-                    video.onclick = function() {
-                        this.play();
-                        this.nextElementSibling.style.display = 'none';
-                    };
-                    
-                    // Create play button overlay
-                    const playButton = document.createElement('div');
-                    playButton.className = 'play-button-overlay';
-                    playButton.style.cssText = 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.7); border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2;';
-                    playButton.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
-                    
-                    videoContainer.appendChild(video);
-                    videoContainer.appendChild(playButton);
-                    thumb.appendChild(videoContainer);
-                } else if (hasRealImage) {
-                    // Add image
-                    const img = document.createElement('img');
-                    img.src = obj.image;
-                    img.alt = '';
-                    img.loading = 'lazy';
-                    img.referrerPolicy = 'no-referrer';
-                    img.onload = function() {
-                        this.parentElement.classList.add('loaded');
-                        // Remove optimistic state when image loads
-                        card.classList.remove('optimistic');
-                    };
-                    thumb.appendChild(img);
-                }
+                    card.classList.remove('optimistic');
+                };
+                thumb.appendChild(img);
             } else {
-                // Keep placeholder state
+                
                 thumb.classList.add('placeholder', 'no-image');
-                // Remove any existing media
-                const existingMedia = thumb.querySelector('img, video');
-                if (existingMedia) existingMedia.remove();
+                
+                const existingImg = thumb.querySelector('img');
+                if (existingImg) existingImg.remove();
             }
             
             return true;
@@ -2204,5 +2100,3 @@ export class WantApp {
         return false;
     }
 }
-
-// App is initialized from index.html
