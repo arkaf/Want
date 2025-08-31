@@ -2290,6 +2290,7 @@ export class WantApp {
                     ptr.classList.remove('ptr--refresh');
                     ptr.querySelector('.ptr__icon').textContent = '↓';
                     ptr.style.transform = 'translateY(-100%)';
+                    ptr.style.display = 'none'; // Completely hide the element
                     isRefreshing = false;
                 }, 500);
             }
@@ -2300,6 +2301,11 @@ export class WantApp {
             
             startY = e.touches[0].clientY;
             isPulling = false;
+            
+            // Show PTR element if it was hidden
+            if (ptr.style.display === 'none') {
+                ptr.style.display = 'grid';
+            }
         };
 
         const handleTouchMove = (e) => {
