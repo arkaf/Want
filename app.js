@@ -2233,12 +2233,25 @@ export class WantApp {
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
                            window.navigator.standalone === true;
         
-        if (!isStandalone) return;
+        console.log('PTR Setup - isStandalone:', isStandalone);
+        console.log('PTR Setup - display-mode:', window.matchMedia('(display-mode: standalone)').matches);
+        console.log('PTR Setup - navigator.standalone:', window.navigator.standalone);
+        
+        if (!isStandalone) {
+            console.log('PTR Setup - Not in standalone mode, skipping');
+            return;
+        }
 
         const ptr = document.getElementById('ptr');
         const scroller = document.getElementById('appMain');
         
-        if (!ptr || !scroller) return;
+        console.log('PTR Setup - ptr element:', ptr);
+        console.log('PTR Setup - scroller element:', scroller);
+        
+        if (!ptr || !scroller) {
+            console.log('PTR Setup - Missing required elements, skipping');
+            return;
+        }
 
         let startY = 0;
         let currentY = 0;
@@ -2290,22 +2303,19 @@ export class WantApp {
                     ptr.classList.remove('ptr--refresh');
                     ptr.querySelector('.ptr__icon').textContent = '↓';
                     ptr.style.transform = 'translateY(-100%)';
-                    ptr.style.display = 'none'; // Completely hide the element
+                    // Don't hide with display: none, just keep it translated up
                     isRefreshing = false;
                 }, 500);
             }
         };
 
         const handleTouchStart = (e) => {
+            console.log('PTR Touch Start - scrollTop:', scroller.scrollTop);
             if (isRefreshing || scroller.scrollTop !== 0) return;
             
             startY = e.touches[0].clientY;
             isPulling = false;
-            
-            // Show PTR element if it was hidden
-            if (ptr.style.display === 'none') {
-                ptr.style.display = 'grid';
-            }
+            console.log('PTR Touch Start - startY:', startY);
         };
 
         const handleTouchMove = (e) => {
@@ -2314,10 +2324,13 @@ export class WantApp {
             currentY = e.touches[0].clientY;
             const deltaY = currentY - startY;
             
+            console.log('PTR Touch Move - deltaY:', deltaY, 'scrollTop:', scroller.scrollTop);
+            
             if (deltaY > 0 && scroller.scrollTop === 0) {
                 e.preventDefault();
                 isPulling = true;
                 updatePTR(deltaY);
+                console.log('PTR Touch Move - updating PTR with deltaY:', deltaY);
             }
         };
 
