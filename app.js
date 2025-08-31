@@ -558,14 +558,14 @@ export class WantApp {
 
     showAddSheet() {
         const html = `
-            <div class="sheet-header">
-                <h2>Add to Want</h2>
-                <button class="sheet-close-btn" onclick="window.wantApp.hideAddSheet()">&times;</button>
-            </div>
             <form id="addForm">
-                <div class="form-group">
-                    <label for="urlInput">URL *</label>
-                    <input type="url" id="urlInput" name="url" required placeholder="https://example.com">
+                <div class="input-container">
+                    <input type="url" id="urlInput" name="url" required placeholder="Paste product URL">
+                    <button type="submit" id="addItemBtn" class="add-button" disabled>
+                        <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 19V5M12 5L5 12M12 5L19 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
                 </div>
 
                 <div id="metaPreview" class="hidden preview">
@@ -594,10 +594,6 @@ export class WantApp {
                         <label for="imageInput">Image URL</label>
                         <input type="url" id="imageInput" name="image" placeholder="https://example.com/image.jpg">
                     </div>
-                </div>
-
-                <div class="form-actions">
-                    <button type="submit" id="addItemBtn" class="btn-primary" disabled>Add Item</button>
                 </div>
             </form>
         `;
@@ -631,10 +627,6 @@ export class WantApp {
 
     showSettingsSheet() {
         const html = `
-            <div class="sheet-header">
-                <h2>Settings</h2>
-                <button class="sheet-close-btn" onclick="window.wantApp.hideSettingsSheet()">&times;</button>
-            </div>
             <div class="settings-content">
                 <div class="settings-section">
                     <h3>Data Management</h3>
