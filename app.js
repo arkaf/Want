@@ -760,11 +760,7 @@ export class WantApp {
 
     async reloadItems() {
         try {
-            // Clear current items
-            this.items = [];
-            this.renderItems([]);
-            
-            // Reload from database
+            // Reload from database without clearing first
             const items = await this.db.getAllItems();
             this.items = items;
             this.renderItems(items);
@@ -2262,10 +2258,8 @@ export class WantApp {
             
             if (y >= threshold && !ptr.classList.contains('ptr--pulling')) {
                 ptr.classList.add('ptr--pulling');
-                ptr.querySelector('.ptr__label').textContent = 'Release to refresh';
             } else if (y < threshold && ptr.classList.contains('ptr--pulling')) {
                 ptr.classList.remove('ptr--pulling');
-                ptr.querySelector('.ptr__label').textContent = 'Pull to refresh';
             }
         };
 
@@ -2276,7 +2270,6 @@ export class WantApp {
             ptr.classList.remove('ptr--pulling');
             ptr.classList.add('ptr--refresh');
             ptr.querySelector('.ptr__icon').textContent = '↻';
-            ptr.querySelector('.ptr__label').textContent = 'Refreshing...';
             
             try {
                 // Try to call app's reload function first
@@ -2296,7 +2289,6 @@ export class WantApp {
                 setTimeout(() => {
                     ptr.classList.remove('ptr--refresh');
                     ptr.querySelector('.ptr__icon').textContent = '↓';
-                    ptr.querySelector('.ptr__label').textContent = 'Pull to refresh';
                     ptr.style.transform = 'translateY(-100%)';
                     isRefreshing = false;
                 }, 500);
