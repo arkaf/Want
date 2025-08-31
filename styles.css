@@ -843,53 +843,7 @@ body.sheet-open {
     background: #e5e5e5;
 }
 
-/* Pull-to-Refresh */
-.ptr {
-    position: sticky;
-    top: 0;
-    height: 72px;
-    display: grid;
-    place-items: center;
-    transform: translateY(-100%);
-    transition: transform 0.3s ease;
-    z-index: 100;
-    background: transparent;
-    pointer-events: none;
-}
 
-/* Hide PTR in browser mode, only show in standalone PWA */
-@media (display-mode: browser) {
-    .ptr {
-        display: none !important;
-    }
-}
-
-.ptr__icon {
-    font-size: 24px;
-    color: #666;
-    transition: transform 0.2s ease;
-}
-
-.ptr--pulling {
-    transition: none;
-}
-
-.ptr--pulling .ptr__icon {
-    transform: rotate(180deg);
-}
-
-.ptr--refresh {
-    transform: translateY(0);
-}
-
-.ptr--refresh .ptr__icon {
-    animation: spin 900ms linear infinite;
-}
-
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-}
 
 /* Toast Notifications */
 #toast {

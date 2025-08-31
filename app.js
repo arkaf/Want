@@ -506,9 +506,6 @@ export class WantApp {
         // Single click delegation for delete buttons
         this.setupDeleteDelegation();
 
-        // Setup Pull-to-Refresh for PWA mode
-        this.setupPullToRefresh();
-
     }
 
     enableGlobalPaste() {
@@ -758,20 +755,7 @@ export class WantApp {
         }
     }
 
-    async reloadItems() {
-        try {
-            // Reload from database without clearing first
-            const items = await this.db.getAllItems();
-            this.items = items;
-            this.renderItems(items);
-            
-            // Show success toast
-            this.showToast('Items refreshed', 'success');
-        } catch (error) {
-            console.error('Error reloading items:', error);
-            this.showToast('Failed to refresh items', 'error');
-        }
-    }
+
 
     renderItems(items) {
         const grid = document.getElementById('itemsGrid');
@@ -2227,134 +2211,7 @@ export class WantApp {
         return false;
     }
 
-    // Pull-to-Refresh functionality
-    setupPullToRefresh() {
-        // Only activate in standalone/PWA mode
-        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
-                           window.navigator.standalone === true;
-        
-        console.log('PTR Setup - isStandalone:', isStandalone);
-        console.log('PTR Setup - display-mode:', window.matchMedia('(display-mode: standalone)').matches);
-        console.log('PTR Setup - navigator.standalone:', window.navigator.standalone);
-        
-        if (!isStandalone) {
-            console.log('PTR Setup - Not in standalone mode, skipping');
-            return;
-        }
 
-        const ptr = document.getElementById('ptr');
-        const scroller = document.getElementById('appMain');
-        
-        console.log('PTR Setup - ptr element:', ptr);
-        console.log('PTR Setup - scroller element:', scroller);
-        
-        if (!ptr || !scroller) {
-            console.log('PTR Setup - Missing required elements, skipping');
-            return;
-        }
-
-        let startY = 0;
-        let currentY = 0;
-        let isPulling = false;
-        let isRefreshing = false;
-        const threshold = 70;
-
-        const updatePTR = (y) => {
-            if (y <= 0) {
-                ptr.style.transform = 'translateY(-100%)';
-                return;
-            }
-            
-            const progress = Math.min(y / threshold, 1);
-            const translateY = -100 + (progress * 100);
-            ptr.style.transform = `translateY(${translateY}%)`;
-            
-            if (y >= threshold && !ptr.classList.contains('ptr--pulling')) {
-                ptr.classList.add('ptr--pulling');
-            } else if (y < threshold && ptr.classList.contains('ptr--pulling')) {
-                ptr.classList.remove('ptr--pulling');
-            }
-        };
-
-        const startRefresh = async () => {
-            if (isRefreshing) return;
-            
-            isRefreshing = true;
-            ptr.classList.remove('ptr--pulling');
-            ptr.classList.add('ptr--refresh');
-            ptr.querySelector('.ptr__icon').textContent = '↻';
-            
-            try {
-                // Try to call app's reload function first
-                if (this.reloadItems) {
-                    await this.reloadItems();
-                } else if (this.loadItems) {
-                    await this.loadItems();
-                } else {
-                    // Fallback to page reload
-                    window.location.reload();
-                    return;
-                }
-            } catch (error) {
-                console.error('Refresh failed:', error);
-            } finally {
-                // Reset PTR after a short delay
-                setTimeout(() => {
-                    ptr.classList.remove('ptr--refresh');
-                    ptr.querySelector('.ptr__icon').textContent = '↓';
-                    ptr.style.transform = 'translateY(-100%)';
-                    // Don't hide with display: none, just keep it translated up
-                    isRefreshing = false;
-                }, 500);
-            }
-        };
-
-        const handleTouchStart = (e) => {
-            console.log('PTR Touch Start - scrollTop:', scroller.scrollTop);
-            if (isRefreshing || scroller.scrollTop !== 0) return;
-            
-            startY = e.touches[0].clientY;
-            isPulling = false;
-            console.log('PTR Touch Start - startY:', startY);
-        };
-
-        const handleTouchMove = (e) => {
-            if (isRefreshing || scroller.scrollTop !== 0) return;
-            
-            currentY = e.touches[0].clientY;
-            const deltaY = currentY - startY;
-            
-            console.log('PTR Touch Move - deltaY:', deltaY, 'scrollTop:', scroller.scrollTop);
-            
-            if (deltaY > 0 && scroller.scrollTop === 0) {
-                e.preventDefault();
-                isPulling = true;
-                updatePTR(deltaY);
-                console.log('PTR Touch Move - updating PTR with deltaY:', deltaY);
-            }
-        };
-
-        const handleTouchEnd = (e) => {
-            if (!isPulling || isRefreshing) return;
-            
-            const deltaY = currentY - startY;
-            
-            if (deltaY >= threshold) {
-                startRefresh();
-            } else {
-                // Reset PTR
-                ptr.classList.remove('ptr--pulling');
-                ptr.style.transform = 'translateY(-100%)';
-            }
-            
-            isPulling = false;
-        };
-
-        // Add event listeners
-        scroller.addEventListener('touchstart', handleTouchStart, { passive: false });
-        scroller.addEventListener('touchmove', handleTouchMove, { passive: false });
-        scroller.addEventListener('touchend', handleTouchEnd, { passive: true });
-    }
 }
 
 // App is initialized from index.html
