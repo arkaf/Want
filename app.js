@@ -15,6 +15,7 @@ import { loadItems, addItem, deleteItem, subscribeItems } from './itemsApi.js';
 // Track pending adds to prevent duplicates
 
 
+
 // Constants & utils
 const PASTE_DEBOUNCE_MS = 120;
 
@@ -505,6 +506,9 @@ export class WantApp {
         // Single click delegation for delete buttons
         this.setupDeleteDelegation();
 
+        // Setup Pull-to-Refresh for PWA mode
+        this.setupPullToRefresh();
+
     }
 
     enableGlobalPaste() {
@@ -751,6 +755,25 @@ export class WantApp {
             this.renderItems(items);
         } catch (error) {
             console.error('Error loading items:', error);
+        }
+    }
+
+    async reloadItems() {
+        try {
+            // Clear current items
+            this.items = [];
+            this.renderItems([]);
+            
+            // Reload from database
+            const items = await this.db.getAllItems();
+            this.items = items;
+            this.renderItems(items);
+            
+            // Show success toast
+            this.showToast('Items refreshed', 'success');
+        } catch (error) {
+            console.error('Error reloading items:', error);
+            this.showToast('Failed to refresh items', 'error');
         }
     }
 
@@ -1151,10 +1174,10 @@ export class WantApp {
             
             // Re-render the grid with updated items
             this.renderItems(this.items);
-            this.showToast('Item deleted');
+            this.showToast('Item deleted', 'success');
         } catch (error) {
             console.error('Error deleting item:', error);
-            this.showToast('Error deleting item');
+            this.showToast('Error deleting item', 'error');
         }
     }
 
@@ -1643,7 +1666,7 @@ export class WantApp {
     }
 
     // Utility: toast
-    showToast(msg) {
+    showToast(msg, type = 'success', duration = 3000) {
         let t = document.getElementById('toast');
         if (!t) {
             t = document.createElement('div');
@@ -1652,10 +1675,22 @@ export class WantApp {
             t.setAttribute('aria-atomic', 'true');
             document.body.appendChild(t);
         }
+        
+        // Clear any existing classes
+        t.className = '';
+        
+        // Set message and type
         t.textContent = msg;
+        t.classList.add(type);
+        
+        // Show toast
         t.classList.add('show');
+        
+        // Auto-hide after duration
         clearTimeout(this._toastTimer);
-        this._toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
+        this._toastTimer = setTimeout(() => {
+            t.classList.remove('show');
+        }, duration);
     }
 
     setupMoreMenu() {
@@ -1789,7 +1824,7 @@ export class WantApp {
                             });
                         } else {
                             await navigator.clipboard.writeText(item.url);
-                            this.showToast('Link copied');
+                            this.showToast('Link copied', 'info');
                         }
                     } catch(error) { 
                         console.log('Share cancelled or failed:', error);
@@ -1811,9 +1846,9 @@ export class WantApp {
                             document.execCommand('copy');
                             ta.remove();
                         }
-                        this.showToast('Link copied to clipboard');
+                        this.showToast('Link copied', 'info');
                     } catch (e) {
-                        this.showToast('Could not copy link');
+                        this.showToast('Could not copy link', 'error');
                         console.error('Copy failed', e);
                     }
                 }
@@ -1830,7 +1865,7 @@ export class WantApp {
                             
                             // Re-render the grid
                             this.renderItems(this.items);
-                            this.showToast('Item deleted');
+                            this.showToast('Item deleted', 'success');
                         } catch (error) {
                             console.error('Failed to delete item:', error);
                             this.showToast('Failed to delete item', 'error');
@@ -2093,12 +2128,12 @@ export class WantApp {
             if (item) {
                 // Replace optimistic card with real card
                 this.reconcileCard(tempId, item);
-                this.showToast('Item added successfully');
+                this.showToast('Item added', 'success');
             }
         } catch (error) {
             console.error('addItemDirectly failed', error);
             this.removeOptimisticCardByUrl(url);
-            this.showToast(error?.message === 'Item already exists' ? 'Item already exists' : 'Failed to add item');
+            this.showToast(error?.message === 'Item already exists' ? 'Item already exists' : 'Failed to add item', 'error');
         } finally {
             window.pendingAdds.delete(url);
         }
@@ -2194,6 +2229,120 @@ export class WantApp {
             return true;
         }
         return false;
+    }
+
+    // Pull-to-Refresh functionality
+    setupPullToRefresh() {
+        // Only activate in standalone/PWA mode
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                           window.navigator.standalone === true;
+        
+        if (!isStandalone) return;
+
+        const ptr = document.getElementById('ptr');
+        const scroller = document.getElementById('appMain');
+        
+        if (!ptr || !scroller) return;
+
+        let startY = 0;
+        let currentY = 0;
+        let isPulling = false;
+        let isRefreshing = false;
+        const threshold = 70;
+
+        const updatePTR = (y) => {
+            if (y <= 0) {
+                ptr.style.transform = 'translateY(-100%)';
+                return;
+            }
+            
+            const progress = Math.min(y / threshold, 1);
+            const translateY = -100 + (progress * 100);
+            ptr.style.transform = `translateY(${translateY}%)`;
+            
+            if (y >= threshold && !ptr.classList.contains('ptr--pulling')) {
+                ptr.classList.add('ptr--pulling');
+                ptr.querySelector('.ptr__label').textContent = 'Release to refresh';
+            } else if (y < threshold && ptr.classList.contains('ptr--pulling')) {
+                ptr.classList.remove('ptr--pulling');
+                ptr.querySelector('.ptr__label').textContent = 'Pull to refresh';
+            }
+        };
+
+        const startRefresh = async () => {
+            if (isRefreshing) return;
+            
+            isRefreshing = true;
+            ptr.classList.remove('ptr--pulling');
+            ptr.classList.add('ptr--refresh');
+            ptr.querySelector('.ptr__icon').textContent = '↻';
+            ptr.querySelector('.ptr__label').textContent = 'Refreshing...';
+            
+            try {
+                // Try to call app's reload function first
+                if (this.reloadItems) {
+                    await this.reloadItems();
+                } else if (this.loadItems) {
+                    await this.loadItems();
+                } else {
+                    // Fallback to page reload
+                    window.location.reload();
+                    return;
+                }
+            } catch (error) {
+                console.error('Refresh failed:', error);
+            } finally {
+                // Reset PTR after a short delay
+                setTimeout(() => {
+                    ptr.classList.remove('ptr--refresh');
+                    ptr.querySelector('.ptr__icon').textContent = '↓';
+                    ptr.querySelector('.ptr__label').textContent = 'Pull to refresh';
+                    ptr.style.transform = 'translateY(-100%)';
+                    isRefreshing = false;
+                }, 500);
+            }
+        };
+
+        const handleTouchStart = (e) => {
+            if (isRefreshing || scroller.scrollTop !== 0) return;
+            
+            startY = e.touches[0].clientY;
+            isPulling = false;
+        };
+
+        const handleTouchMove = (e) => {
+            if (isRefreshing || scroller.scrollTop !== 0) return;
+            
+            currentY = e.touches[0].clientY;
+            const deltaY = currentY - startY;
+            
+            if (deltaY > 0 && scroller.scrollTop === 0) {
+                e.preventDefault();
+                isPulling = true;
+                updatePTR(deltaY);
+            }
+        };
+
+        const handleTouchEnd = (e) => {
+            if (!isPulling || isRefreshing) return;
+            
+            const deltaY = currentY - startY;
+            
+            if (deltaY >= threshold) {
+                startRefresh();
+            } else {
+                // Reset PTR
+                ptr.classList.remove('ptr--pulling');
+                ptr.style.transform = 'translateY(-100%)';
+            }
+            
+            isPulling = false;
+        };
+
+        // Add event listeners
+        scroller.addEventListener('touchstart', handleTouchStart, { passive: false });
+        scroller.addEventListener('touchmove', handleTouchMove, { passive: false });
+        scroller.addEventListener('touchend', handleTouchEnd, { passive: true });
     }
 }
 

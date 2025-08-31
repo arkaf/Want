@@ -104,6 +104,12 @@
     </div>
 
     <main id="appMain" class="main">
+        <!-- Pull-to-Refresh indicator -->
+        <div id="ptr" class="ptr">
+            <div class="ptr__icon">↓</div>
+            <div class="ptr__label">Pull to refresh</div>
+        </div>
+        
         <div id="storeTags" class="store-tags" role="tablist" aria-label="Stores"></div>
         
         <div id="itemsGrid" class="items-grid">
@@ -134,7 +140,7 @@
 
 
     <!-- Toast -->
-    <div id="toast" class="toast" style="display: none;"></div>
+    <div id="toast" class="toast"></div>
 
     <!-- More menu (reused for all cards) -->
     <div id="moreMenuBackdrop" class="menu-backdrop" hidden></div>
