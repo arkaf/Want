@@ -857,17 +857,17 @@ body.sheet-open {
     pointer-events: none;
 }
 
-.ptr__icon {
-    font-size: 20px;
-    color: #666;
-    margin-bottom: 4px;
-    transition: transform 0.2s ease;
+/* Hide PTR in browser mode, only show in standalone PWA */
+@media (display-mode: browser) {
+    .ptr {
+        display: none !important;
+    }
 }
 
-.ptr__label {
-    font-size: 12px;
+.ptr__icon {
+    font-size: 24px;
     color: #666;
-    font-weight: 500;
+    transition: transform 0.2s ease;
 }
 
 .ptr--pulling {
