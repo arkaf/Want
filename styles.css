@@ -1218,15 +1218,38 @@ body.sheet-open {
     align-items: center;
     justify-content: center;
     padding: 32px 16px;
-    height: 100vh;
+    min-height: 100vh;
     text-align: center;
-    overflow: hidden;
+    overflow-y: auto;
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
     z-index: 1000;
+}
+
+/* Ensure proper vertical centering and scrolling on mobile */
+@media (max-width: 768px) {
+    .auth-screen {
+        padding: 20px 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        min-height: 100vh;
+        padding-top: 5vh;
+        padding-bottom: 5vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .auth-content {
+        width: 100%;
+        max-width: 400px;
+        margin: 0 auto;
+        flex-shrink: 0;
+    }
 }
 
 /* Hide navbar when auth screen is shown */
@@ -1417,6 +1440,79 @@ body.authenticated .main {
     align-items: center;
     gap: 12px;
     width: 100%;
+}
+
+.confirm-actions .btn-secondary {
+    width: 320px;
+    max-width: 100%;
+}
+
+/* Mobile responsiveness for email confirmation */
+@media (max-width: 768px) {
+    #emailConfirm {
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        justify-content: flex-start;
+        padding-top: 5vh;
+        padding-bottom: 5vh;
+    }
+    
+    .email-illustration {
+        width: 200px;
+        height: 200px;
+        margin: 12px 0 20px 0;
+    }
+    
+    .confirm-title {
+        font-size: 24px;
+        margin: 0 0 20px 0;
+    }
+    
+    .confirm-description {
+        margin-bottom: 28px;
+        max-width: 280px;
+    }
+    
+    .confirm-description p {
+        font-size: 15px;
+        margin: 0 0 10px 0;
+    }
+    
+    .confirm-actions .btn-secondary {
+        width: 280px;
+    }
+}
+
+@media (max-width: 480px) {
+    #emailConfirm {
+        padding-top: 3vh;
+        padding-bottom: 3vh;
+    }
+    
+    .email-illustration {
+        width: 160px;
+        height: 160px;
+        margin: 10px 0 16px 0;
+    }
+    
+    .confirm-title {
+        font-size: 22px;
+        margin: 0 0 16px 0;
+    }
+    
+    .confirm-description {
+        margin-bottom: 24px;
+        max-width: 260px;
+    }
+    
+    .confirm-description p {
+        font-size: 14px;
+        margin: 0 0 8px 0;
+    }
+    
+    .confirm-actions .btn-secondary {
+        width: 260px;
+    }
 }
 
 .otp-form {

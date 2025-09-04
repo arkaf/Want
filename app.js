@@ -418,10 +418,41 @@ function showLoginScreen() {
   const avatarBtn = document.getElementById('avatarBtn');
   const appMain = document.getElementById('appMain');
   
+  // Reset all auth screens to default state
+  const authMain = document.getElementById('authMain');
+  const otpMain = document.getElementById('otpMain');
+  const emailConfirm = document.getElementById('emailConfirm');
+  
   if (authScreen) authScreen.style.display = 'flex';
   if (topbar) topbar.style.display = 'none';
   if (avatarBtn) avatarBtn.hidden = true;
   if (appMain) appMain.style.display = 'none';
+  
+  // Show main auth screen and hide others
+  if (authMain) authMain.style.display = '';
+  if (otpMain) otpMain.style.display = 'none';
+  if (emailConfirm) emailConfirm.style.display = 'none';
+  
+  // Clear any pending email state
+  pendingEmail = '';
+  
+  // Clear any auth messages
+  const authMsg = document.getElementById('authMsg');
+  const otpMsg = document.getElementById('otpMsg');
+  if (authMsg) authMsg.textContent = '';
+  if (otpMsg) otpMsg.textContent = '';
+  
+  // Reset email input
+  const authEmail = document.getElementById('authEmail');
+  if (authEmail) authEmail.value = '';
+  
+  // Reset OTP inputs
+  const otpGrid = document.getElementById('otpGrid');
+  if (otpGrid) {
+    otpGrid.querySelectorAll('input').forEach(input => {
+      input.value = '';
+    });
+  }
 
   // Google login with loading spinner
   document.getElementById('btnGoogle').onclick = async () => {
