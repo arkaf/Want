@@ -15,38 +15,6 @@ export function openSheet(html) {
         sheet.classList.add('is-open');
         backdrop.classList.add('is-open');
         document.body.classList.add('sheet-open');
-        
-        // Focus any input with autofocus attribute or the first input
-        setTimeout(() => {
-            const autofocusInput = content.querySelector('[autofocus]');
-            const firstInput = content.querySelector('input, textarea');
-            const inputToFocus = autofocusInput || firstInput;
-            
-            if (inputToFocus) {
-                // For iOS, we need to be more aggressive with focus
-                inputToFocus.focus();
-                
-                // Force keyboard to appear on iOS
-                if (inputToFocus.type === 'text' || inputToFocus.type === 'url') {
-                    // Try multiple approaches for iOS
-                    inputToFocus.click();
-                    inputToFocus.focus();
-                    
-                    // Select text to make it clear the input is active
-                    setTimeout(() => {
-                        inputToFocus.select();
-                    }, 50);
-                }
-                
-                // Additional iOS-specific handling
-                if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-                    // Force virtual keyboard on iOS
-                    inputToFocus.setAttribute('readonly', 'readonly');
-                    inputToFocus.removeAttribute('readonly');
-                    inputToFocus.focus();
-                }
-            }
-        }, 200); // Longer delay for iOS to ensure sheet is fully open
     });
 }
 

@@ -26,12 +26,7 @@
         
         <meta name="theme-color" content="#ffffff">
     
-        <!-- Google Fonts - Inter -->
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-        
-               <link rel="stylesheet" href="styles.css?v=40">
+               <link rel="stylesheet" href="styles.css?v=1756589291118?v=1756589291118">
     <script>
         // Supabase environment variables
         window.__ENV = {
@@ -89,78 +84,15 @@
         </div>
     </header>
 
-    <!-- Top transparent gradient -->
-    <div class="top-gradient"></div>
-
-    <!-- Auth Screen -->
+    <!-- Signup screen -->
     <div id="auth-screen" class="auth-screen" hidden>
-        <!-- Email OTP Screen -->
-        <div id="otpMain" class="auth-screen" style="display: none;">
-            <div class="auth-content">
-                <img src="assets/want.svg" alt="Want" class="auth-logo" />
-                <h1>Enter Code</h1>
-                <p>We sent a 6-digit code to</p>
-                <p id="otpEmail" class="otp-email"></p>
-                
-                <div class="otp-form">
-                    <div id="otpGrid" class="otp-grid">
-                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*">
-                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*">
-                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*">
-                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*">
-                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*">
-                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*">
-                    </div>
-                    
-                    <div id="otpMsg" class="auth-message"></div>
-                    
-                    <div class="otp-actions">
-                        <button id="btnOtpVerify" class="btn-primary">Verify Code</button>
-                        <button id="btnOtpBack" class="btn-secondary">Back</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Main Auth Screen -->
-        <div id="authMain" class="auth-screen">
-            <img src="assets/want.svg" alt="Want" class="auth-logo" />
-            <div class="auth-subtitle">Your smarter shopping list.</div>
-            
-            <!-- Email OTP Section -->
-            <div class="auth-email-section">
-                <div class="form-group">
-                    <input type="email" id="authEmail" placeholder="Enter your email" autocomplete="email">
-                </div>
-                <button id="btnEmailContinue" class="btn-primary">Continue with Email</button>
-                <div id="authMsg" class="auth-message"></div>
-            </div>
-            
-            <div class="auth-divider"></div>
-            
-            <button id="btnGoogle" class="auth-btn auth-btn-google">
-                <span class="gmark"></span>
-                Continue with Google
-            </button>
-        </div>
+        <img src="assets/want.svg" alt="Want" class="auth-logo" />
+        <div class="auth-subtitle">Your smarter shopping list.</div>
 
-        <!-- Email Confirmation Screen -->
-        <div id="emailConfirm" class="auth-screen" style="display: none;">
-            <div class="auth-content">
-                <img src="assets/want.svg" alt="Want" class="auth-logo" />
-                <img src="assets/email.png" alt="Email" class="email-illustration" />
-                <h1 class="confirm-title">Check your inbox</h1>
-                <div class="confirm-description">
-                    <p>We've sent you a magic link to <span id="confirmEmail" class="user-email"></span>.</p>
-                    <p>Click the link in your email to log in.</p>
-                    <p>If you don't see the email, check your spam folder.</p>
-                </div>
-                <div class="confirm-actions">
-                    <button id="btnConfirmBack" class="btn-secondary">Back</button>
-                    <button id="btnEnterCode" class="btn-primary">Enter code manually</button>
-                </div>
-            </div>
-        </div>
+        <button id="btn-google" class="auth-btn auth-btn-google">
+            <span class="gmark"></span>
+            Continue with Google
+        </button>
     </div>
 
     <main id="appMain" class="main">
@@ -194,7 +126,7 @@
 
 
     <!-- Toast -->
-    <div id="toast" class="toast"></div>
+    <div id="toast" class="toast" style="display: none;"></div>
 
     <!-- More menu (reused for all cards) -->
     <div id="moreMenuBackdrop" class="menu-backdrop" hidden></div>
@@ -207,10 +139,10 @@
         
 
     <script src="vendor/idb.min.js"></script>
-    <script src="db.js?v=32"></script>
+    <script src="db.js?v=1756589291118?v=1756589291118"></script>
     <script type="module">
         // Import and initialize the app
-                       import { WantApp } from './app.js?v=35';
+                       import { WantApp } from './app.js?v=1756589291118?v=1756589291118';
         
         // Create app instance when DOM is loaded
         document.addEventListener('DOMContentLoaded', () => {
