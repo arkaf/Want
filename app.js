@@ -11,6 +11,7 @@ import { withStableBust } from './src/utils/cacheBust.js';
 // Import Supabase auth and items API
 import { supabase } from './supabaseClient.js';
 import { loadItems, addItem, deleteItem, subscribeItems } from './itemsApi.js';
+import { sendEmailOtp, verifyEmailOtp, signInWithGoogle, getCurrentUser, logout } from './auth.js';
 
 // Track pending adds to prevent duplicates
 
@@ -18,6 +19,34 @@ import { loadItems, addItem, deleteItem, subscribeItems } from './itemsApi.js';
 
 // Constants & utils
 const PASTE_DEBOUNCE_MS = 120;
+
+// Simple router helpers for auth
+const $ = (s) => document.querySelector(s);
+
+// Keep the email used for OTP
+let pendingEmail = '';
+
+// Avatar helper function
+function getAvatarData(user) {
+  const md = user?.user_metadata || {};
+  const identities = user?.identities || [];
+  const fromIdentity = identities[0]?.identity_data || {};
+
+  const picture =
+    md.avatar_url ||
+    md.picture ||
+    fromIdentity.picture ||
+    '';
+
+  let fallback = '';
+  const email = user?.email || '';
+  if (!picture && email) {
+    const m = email.match(/[a-zA-Z0-9]/g);
+    fallback = (m?.slice(0, 2).join('') || '').toUpperCase();
+  }
+  const name = md.full_name || md.name || fromIdentity.name || email;
+  return { picture, fallback, name };
+}
 
 function domainFrom(url) {
     try { return new URL(url).hostname.replace(/^www\./,''); } catch { return ""; }
@@ -114,18 +143,178 @@ export function loginWithApple() {
   });
 }
 
-export async function logout() {
-  await supabase.auth.signOut();
-  // clear any local caches if present
-  if (window.__unsubItems) window.__unsubItems();
+
+
+// Email OTP Event Handlers
+export function setupEmailOtpHandlers() {
+  console.log('Setting up Email OTP handlers...');
   
-  // Clear in-memory state
-  if (window.wantApp) {
-    window.wantApp.items = [];
+  // Query DOM elements when function is called
+  const authMain = $('#authMain');
+  const otpMain = $('#otpMain');
+  const authEmail = $('#authEmail');
+  const btnEmailContinue = $('#btnEmailContinue');
+  const btnGoogle = $('#btnGoogle');
+  const authMsg = $('#authMsg');
+  const otpEmailLabel = $('#otpEmail');
+  const otpMsg = $('#otpMsg');
+  const btnOtpVerify = $('#btnOtpVerify');
+  const btnOtpBack = $('#btnOtpBack');
+  const otpGrid = $('#otpGrid');
+  
+  console.log('btnEmailContinue:', btnEmailContinue);
+  console.log('authEmail:', authEmail);
+  console.log('otpMain:', otpMain);
+  console.log('authMain:', authMain);
+  
+  if (!btnEmailContinue || !authEmail || !otpMain || !authMain) {
+    console.error('Missing required DOM elements for Email OTP');
+    return;
   }
   
-  // Hard bounce to the current path to kill any stale state from SW/router
-  location.replace(window.location.pathname);
+  // Email → send OTP
+  btnEmailContinue.addEventListener('click', async () => {
+    console.log('Email continue button clicked');
+    const email = (authEmail.value || '').trim();
+    authMsg.textContent = '';
+    
+    if (!email) {
+      authMsg.textContent = 'Please enter a valid email.';
+      return;
+    }
+    
+    console.log('Sending OTP to:', email);
+    
+    try {
+      btnEmailContinue.disabled = true;
+      await sendEmailOtp(email);
+      pendingEmail = email;
+      otpEmailLabel.textContent = email;
+      
+      // Show email confirmation screen instead of OTP screen
+      const emailConfirm = document.getElementById('emailConfirm');
+      const confirmEmail = document.getElementById('confirmEmail');
+      
+      console.log('emailConfirm element:', emailConfirm);
+      console.log('confirmEmail element:', confirmEmail);
+      
+      if (emailConfirm && confirmEmail) {
+        console.log('Showing email confirmation screen');
+        confirmEmail.textContent = email;
+        authMain.style.display = 'none';
+        emailConfirm.style.display = '';
+        console.log('Email confirmation screen should now be visible');
+      } else {
+        console.log('Email confirmation elements not found, falling back to OTP screen');
+        // Fallback to OTP screen if confirmation screen not found
+        authMain.style.display = 'none';
+        otpMain.style.display = '';
+        otpGrid.querySelector('input').focus();
+      }
+    } catch (e) {
+      console.error('OTP send error:', e);
+      authMsg.textContent = e?.message || String(e);
+    } finally {
+      btnEmailContinue.disabled = false;
+    }
+  });
+
+  // OTP capture & verify
+  // Auto-advance inputs
+  otpGrid.querySelectorAll('input').forEach((input, idx, all) => {
+    input.addEventListener('input', () => {
+      input.value = input.value.replace(/\D/g,'').slice(0,1);
+      if (input.value && idx < all.length - 1) all[idx+1].focus();
+    });
+    
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !input.value && idx > 0) all[idx-1].focus();
+    });
+  });
+
+  btnOtpVerify.addEventListener('click', verifyOtpAndLogin);
+  btnOtpBack.addEventListener('click', () => {
+    otpMain.style.display = 'none';
+    authMain.style.display = '';
+  });
+
+  // Email confirmation back button
+  const btnConfirmBack = document.getElementById('btnConfirmBack');
+  if (btnConfirmBack) {
+    btnConfirmBack.addEventListener('click', () => {
+      const emailConfirm = document.getElementById('emailConfirm');
+      if (emailConfirm) {
+        emailConfirm.style.display = 'none';
+        authMain.style.display = '';
+      }
+    });
+  }
+
+  // Enter code manually button
+  const btnEnterCode = document.getElementById('btnEnterCode');
+  if (btnEnterCode) {
+    btnEnterCode.addEventListener('click', () => {
+      console.log('Enter code manually button clicked');
+      const emailConfirm = document.getElementById('emailConfirm');
+      const otpMain = document.getElementById('otpMain');
+      const otpGrid = document.getElementById('otpGrid');
+      
+      console.log('emailConfirm:', emailConfirm);
+      console.log('otpMain:', otpMain);
+      console.log('otpGrid:', otpGrid);
+      
+      if (emailConfirm && otpMain && otpGrid) {
+        console.log('Hiding email confirmation, showing OTP screen');
+        emailConfirm.style.display = 'none';
+        otpMain.style.display = '';
+        otpGrid.querySelector('input').focus();
+        console.log('OTP screen should now be visible');
+      } else {
+        console.error('Missing required elements for OTP screen');
+      }
+    });
+  }
+
+  // Google sign-in button
+  if (btnGoogle) {
+    btnGoogle.addEventListener('click', async () => {
+      try {
+        btnGoogle.disabled = true;
+        await signInWithGoogle();
+      } catch (e) {
+        console.error('Google sign-in error:', e);
+        authMsg.textContent = e?.message || String(e);
+      } finally {
+        btnGoogle.disabled = false;
+      }
+    });
+  }
+}
+
+async function verifyOtpAndLogin() {
+  console.log('Verifying OTP...');
+  otpMsg.textContent = '';
+  const code = Array.from(otpGrid.querySelectorAll('input')).map(i => i.value).join('');
+  
+  console.log('OTP code:', code);
+  
+  if (code.length < 6) {
+    otpMsg.textContent = 'Enter the 6-digit code.';
+    return;
+  }
+  
+  try {
+    btnOtpVerify.disabled = true;
+    console.log('Verifying OTP for email:', pendingEmail);
+    const user = await verifyEmailOtp({ email: pendingEmail, code });
+    console.log('OTP verified, user:', user);
+    showAppForUser(user);
+  } catch (e) {
+    console.error('OTP verification error:', e);
+    otpMsg.textContent = e?.message || String(e);
+  } finally {
+    btnOtpVerify.disabled = false;
+  }
 }
 
 async function showAppForUser(user) {
@@ -149,9 +338,12 @@ async function showAppForUser(user) {
     return;
   }
   
-  if (user.user_metadata?.avatar_url) {
+  // Use the new avatar helper function
+  const { picture, fallback, name } = getAvatarData(user);
+  
+  if (picture) {
     // Try to load the avatar image
-    img.src = user.user_metadata.avatar_url;
+    img.src = picture;
     img.style.display = 'block';
     
     // Handle image load errors (like 429 rate limits)
@@ -159,8 +351,7 @@ async function showAppForUser(user) {
       console.warn('Avatar failed to load, using fallback');
       img.style.display = 'none';
       // Create a fallback avatar with user's initials
-      const initials = (user.user_metadata?.full_name || user.email || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-      avatarBtn.innerHTML = `<div class="avatar-fallback">${initials}</div>`;
+      avatarBtn.innerHTML = `<div class="avatar-fallback">${fallback || 'ME'}</div>`;
     };
     
     // Handle successful load
@@ -172,11 +363,10 @@ async function showAppForUser(user) {
   } else {
     // No avatar URL - use fallback immediately
     img.style.display = 'none';
-    const initials = (user.user_metadata?.full_name || user.email || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-    avatarBtn.innerHTML = `<div class="avatar-fallback">${initials}</div>`;
+    avatarBtn.innerHTML = `<div class="avatar-fallback">${fallback || 'ME'}</div>`;
   }
   
-  img.alt = user.user_metadata?.full_name || user.email || 'Account';
+  img.alt = name || 'Account';
 
   // Wire avatar click
   const btn = document.getElementById('avatarBtn');
@@ -230,8 +420,8 @@ function showLoginScreen() {
   if (appMain) appMain.style.display = 'none';
 
   // Google login with loading spinner
-  document.getElementById('btn-google').onclick = () => {
-    const btn = document.getElementById('btn-google');
+  document.getElementById('btnGoogle').onclick = async () => {
+    const btn = document.getElementById('btnGoogle');
     
     // Show loading state
     btn.innerHTML = `
@@ -242,8 +432,18 @@ function showLoginScreen() {
     `;
     btn.disabled = true;
     
-    // Start OAuth flow
-    loginWithGoogle();
+    try {
+      // Start OAuth flow using new auth function
+      await signInWithGoogle();
+    } catch (error) {
+      console.error('Google sign-in failed:', error);
+      // Reset button state
+      btn.innerHTML = `
+        <span class="gmark"></span>
+        Continue with Google
+      `;
+      btn.disabled = false;
+    }
   };
 }
 
@@ -506,6 +706,9 @@ export class WantApp {
         // Single click delegation for delete buttons
         this.setupDeleteDelegation();
 
+        // Setup Email OTP handlers
+        setupEmailOtpHandlers();
+
     }
 
     enableGlobalPaste() {
@@ -561,7 +764,7 @@ export class WantApp {
         const html = `
             <form id="addForm">
                 <div class="input-container">
-                    <input type="url" id="urlInput" name="url" required placeholder="Paste product URL">
+                    <input type="url" id="urlInput" name="url" required placeholder="Paste product URL" autofocus>
                     <button type="submit" id="addItemBtn" class="add-button" disabled>
                         <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M12 19V5M12 5L5 12M12 5L19 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -600,12 +803,6 @@ export class WantApp {
         `;
         
         openSheet(html);
-        
-        // Focus the URL input
-        setTimeout(() => {
-            const urlInput = document.getElementById('urlInput');
-            if (urlInput) urlInput.focus();
-        }, 100);
         
         // Attach form handler
         this.attachAddFormHandler();

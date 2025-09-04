@@ -892,6 +892,48 @@ body.sheet-open {
     main {
         padding: 1.5rem;
     }
+    
+    /* Web-specific auth styling */
+    .auth-email-section input[type="email"] {
+        width: 320px;
+        max-width: 320px;
+    }
+    
+    .btn-primary,
+    .auth-btn {
+        width: 320px;
+    }
+    
+    .auth-content {
+        max-width: 400px;
+    }
+    
+    .auth-divider {
+        width: 320px;
+    }
+}
+
+/* Mobile-specific adjustments */
+@media (max-width: 767px) {
+    .auth-content {
+        padding: 0 16px;
+    }
+    
+    .auth-email-section,
+    .auth-email-section .form-group {
+        max-width: 100%;
+    }
+    
+    .btn-primary,
+    .auth-btn {
+        width: 100%;
+        max-width: 320px;
+    }
+    
+    .auth-divider {
+        width: 100%;
+        max-width: 320px;
+    }
 }
 
 /* Loading state */
@@ -1217,7 +1259,7 @@ body.authenticated .main {
 }
 
 .auth-btn {
-    width: min(420px, 88vw);
+    width: min(320px, 88vw);
     height: 52px;
     border-radius: 12px;
     border: none;
@@ -1229,7 +1271,6 @@ body.authenticated .main {
     gap: 12px;
     font-weight: 500;
     font-size: 16px;
-    margin-top: 18px;
     cursor: pointer;
     transition: background-color 0.2s ease;
 }
@@ -1265,6 +1306,208 @@ body.authenticated .main {
     align-items: center;
     gap: 12px;
     font-size: 14px;
+}
+
+/* Email OTP Styles */
+.auth-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto;
+    padding: 0 20px;
+    box-sizing: border-box;
+}
+
+.auth-email-section {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 320px;
+}
+
+.auth-email-section .form-group {
+    margin-bottom: 24px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    max-width: 320px;
+}
+
+.auth-email-section input[type="email"] {
+    width: 100%;
+    max-width: 320px;
+    padding: 12px 16px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 16px;
+    background: #ffffff;
+    box-sizing: border-box;
+}
+
+.auth-divider {
+    width: 320px;
+    max-width: 100%;
+    height: 1px;
+    background: #e0e0e0;
+    margin: 24px auto;
+}
+
+.auth-message {
+    margin: 0.5rem 0;
+    font-size: 14px;
+    min-height: 20px;
+    color: #e74c3c;
+}
+
+.auth-message:empty {
+    display: none;
+}
+
+/* OTP Screen */
+.otp-email {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 1.5rem;
+}
+
+/* Email Confirmation Screen */
+.email-illustration {
+    width: 300px;
+    height: 300px;
+    margin: 16px 0 24px 0;
+    object-fit: cover;
+}
+
+.confirm-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: #000;
+    margin: 0 0 24px 0;
+    line-height: 1.2;
+}
+
+.confirm-description {
+    margin-bottom: 32px;
+    max-width: 320px;
+}
+
+.confirm-description p {
+    margin: 0 0 12px 0;
+    color: rgba(0,0,0,.65);
+    font-size: 16px;
+    line-height: 1.5;
+}
+
+.confirm-description p:last-child {
+    margin-bottom: 0;
+}
+
+.user-email {
+    font-weight: 600;
+    color: #333;
+}
+
+.confirm-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+
+.otp-form {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.otp-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+    margin-bottom: 1.5rem;
+    width: 100%;
+    max-width: 300px;
+}
+
+@media (min-width: 768px) {
+    .otp-grid {
+        max-width: 320px;
+    }
+}
+
+.otp-grid input {
+    width: 100%;
+    height: 48px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    text-align: center;
+    font-size: 18px;
+    font-weight: 600;
+    background: #ffffff;
+    box-sizing: border-box;
+}
+
+.otp-grid input:focus {
+    border-color: #007AFF;
+    outline: none;
+}
+
+.otp-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    width: 100%;
+    max-width: 300px;
+}
+
+.btn-primary {
+    width: min(320px, 88vw);
+    height: 52px;
+    border-radius: 12px;
+    border: none;
+    background: #000;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    font-weight: 500;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: #333;
+}
+
+.btn-primary:disabled {
+    background: #666;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.btn-secondary {
+    background: transparent;
+    color: #666;
+    border: 1px solid #e0e0e0;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+    background: #f5f5f5;
+    border-color: #ccc;
 }
 
 .auth-loading-spinner .spinner {
@@ -1303,15 +1546,14 @@ body.authenticated .main {
     padding: 0; border: 0; background: transparent;
     border-radius: 999px; overflow: hidden;
     display: inline-flex; align-items: center; justify-content: center;
-    margin-left: 8px;
 }
 .avatar-btn img { width: 32px; height: 32px; border-radius: 50%; display: block; }
 
 /* Fallback avatar with initials */
 .avatar-fallback {
-    width: 24px; height: 24px;
+    width: 32px; height: 32px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: black;
     color: white;
     font-size: 10px;
     font-weight: 600;
