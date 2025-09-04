@@ -11,7 +11,7 @@ import { withStableBust } from './src/utils/cacheBust.js';
 // Import Supabase auth and items API
 import { supabase } from './supabaseClient.js';
 import { loadItems, addItem, deleteItem, subscribeItems } from './itemsApi.js';
-import { sendEmailOtp, verifyEmailOtp, signInWithGoogle, getCurrentUser, logout } from './auth.js';
+import { sendEmailOtp, verifyEmailOtp, signInWithGoogle, getCurrentUser, logout, clearAuthState } from './auth.js';
 
 // Track pending adds to prevent duplicates
 
@@ -187,6 +187,10 @@ export function setupEmailOtpHandlers() {
     
     try {
       btnEmailContinue.disabled = true;
+      
+      // Clear any existing authentication state before sending OTP
+      await clearAuthState();
+      
       await sendEmailOtp(email);
       pendingEmail = email;
       otpEmailLabel.textContent = email;
