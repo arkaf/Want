@@ -87,6 +87,12 @@ export async function authInit() {
         }
       }, 300);
     }
+    
+    // Clear any loading timeout
+    if (window.loadingTimeout) {
+      clearTimeout(window.loadingTimeout);
+      window.loadingTimeout = null;
+    }
   }
 
   // Listen to auth state changes
