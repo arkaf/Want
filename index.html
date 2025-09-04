@@ -44,79 +44,26 @@
             console.log('Running locally - some PWA features may be limited');
         }
         
-        // Comprehensive cache clearing for iPhone and all devices
+        // Simple cache clearing - only on refresh to prevent infinite loops
         (function() {
-            console.log('Starting comprehensive cache clearing...');
-            
-            // Detect iPhone/iOS
-            const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+            // Only clear cache on page refresh, not on normal navigation
             const isRefresh = window.performance.navigation.type === 1;
             
-            console.log('Device info:', { isIOS, isRefresh, userAgent: navigator.userAgent });
-            
-            // Clear service worker cache
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.getRegistrations().then(registrations => {
-                    registrations.forEach(registration => {
-                        console.log('Unregistering service worker:', registration.scope);
-                        registration.unregister();
-                    });
-                });
-            }
-            
-            // Clear all caches
-            if ('caches' in window) {
-                caches.keys().then(names => {
-                    names.forEach(name => {
-                        console.log('Deleting cache:', name);
-                        caches.delete(name);
-                    });
-                });
-            }
-            
-            // Clear localStorage auth tokens - more aggressive for iOS
-            try {
-                const keys = Object.keys(localStorage);
-                keys.forEach(key => {
-                    if (key.includes('supabase') || key.includes('auth') || key.includes('sb-') || 
-                        key.toLowerCase().includes('token') || key.toLowerCase().includes('session')) {
-                        console.log('Removing localStorage key:', key);
-                        localStorage.removeItem(key);
-                    }
-                });
+            if (isRefresh) {
+                console.log('Page refresh detected - clearing auth cache');
                 
-                // Clear sessionStorage completely
-                sessionStorage.clear();
-                console.log('SessionStorage cleared');
-                
-                // For iOS, be extra aggressive with cache clearing
-                if (isIOS) {
-                    console.log('iOS detected - applying extra cache clearing');
-                    
-                    // Clear any remaining auth-related storage
-                    const remainingKeys = Object.keys(localStorage);
-                    remainingKeys.forEach(key => {
-                        if (key.toLowerCase().includes('auth') || key.toLowerCase().includes('token') || 
-                            key.toLowerCase().includes('session') || key.toLowerCase().includes('user')) {
-                            console.log('Removing iOS auth key:', key);
+                // Simple localStorage cleanup
+                try {
+                    const keys = Object.keys(localStorage);
+                    keys.forEach(key => {
+                        if (key.includes('supabase') || key.includes('auth') || key.includes('sb-')) {
                             localStorage.removeItem(key);
                         }
                     });
-                    
-                    // Clear any IndexedDB auth data
-                    if ('indexedDB' in window) {
-                        try {
-                            indexedDB.deleteDatabase('supabase');
-                            indexedDB.deleteDatabase('auth');
-                        } catch (e) {
-                            console.warn('Could not clear IndexedDB:', e);
-                        }
-                    }
+                    sessionStorage.clear();
+                } catch (e) {
+                    console.warn('Error clearing storage:', e);
                 }
-                
-                console.log('Cache clearing completed');
-            } catch (e) {
-                console.warn('Error during cache clearing:', e);
             }
         })();
     </script>
@@ -329,11 +276,6 @@
             }, 3000); // Reduced to 3 second timeout for faster recovery
             
             try {
-                // Force clear any remaining auth state before app initialization
-                if (window.clearAuthState) {
-                    await window.clearAuthState();
-                }
-                
                 window.wantApp = new WantApp();
                 
                 // Clear timeout if app initializes successfully
