@@ -55,28 +55,42 @@ export async function logout() {
 // Clear all authentication state and cache
 export async function clearAuthState() {
     try {
+        console.log('Starting comprehensive auth state clearing...');
+        
         // Sign out from Supabase
         await supabase.auth.signOut();
+        console.log('Supabase signOut completed');
         
-        // Clear localStorage
-        localStorage.removeItem('sb-' + supabase.supabaseUrl.split('//')[1].split('.')[0] + '-auth-token');
-        
-        // Clear sessionStorage
-        sessionStorage.clear();
-        
-        // Clear any other auth-related storage
+        // Clear localStorage - more comprehensive approach
         const keys = Object.keys(localStorage);
         keys.forEach(key => {
-            if (key.includes('supabase') || key.includes('auth')) {
+            if (key.includes('supabase') || key.includes('auth') || key.includes('sb-') || key.toLowerCase().includes('token')) {
+                console.log('Removing localStorage key:', key);
                 localStorage.removeItem(key);
             }
         });
         
-        console.log('Authentication state cleared');
+        // Clear sessionStorage completely
+        sessionStorage.clear();
+        console.log('SessionStorage cleared');
+        
+        // Clear any remaining auth-related storage
+        const remainingKeys = Object.keys(localStorage);
+        remainingKeys.forEach(key => {
+            if (key.toLowerCase().includes('auth') || key.toLowerCase().includes('token') || key.toLowerCase().includes('session')) {
+                console.log('Removing remaining auth key:', key);
+                localStorage.removeItem(key);
+            }
+        });
+        
+        console.log('Authentication state cleared successfully');
     } catch (error) {
         console.error('Error clearing auth state:', error);
     }
 }
+
+// Make clearAuthState available globally for emergency use
+window.clearAuthState = clearAuthState;
 
 // Auth state listener
 export function onAuthStateChange(callback) {

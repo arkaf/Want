@@ -44,29 +44,81 @@
             console.log('Running locally - some PWA features may be limited');
         }
         
-        // Clear service worker cache in development and on refresh
-        if (window.location.hostname === 'localhost' || window.performance.navigation.type === 1) {
+        // Comprehensive cache clearing for iPhone and all devices
+        (function() {
+            console.log('Starting comprehensive cache clearing...');
+            
+            // Detect iPhone/iOS
+            const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+            const isRefresh = window.performance.navigation.type === 1;
+            
+            console.log('Device info:', { isIOS, isRefresh, userAgent: navigator.userAgent });
+            
+            // Clear service worker cache
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.getRegistrations().then(registrations => {
                     registrations.forEach(registration => {
+                        console.log('Unregistering service worker:', registration.scope);
                         registration.unregister();
                     });
                 });
             }
             
-            // Clear localStorage auth tokens on refresh to prevent infinite loading
+            // Clear all caches
+            if ('caches' in window) {
+                caches.keys().then(names => {
+                    names.forEach(name => {
+                        console.log('Deleting cache:', name);
+                        caches.delete(name);
+                    });
+                });
+            }
+            
+            // Clear localStorage auth tokens - more aggressive for iOS
             try {
                 const keys = Object.keys(localStorage);
                 keys.forEach(key => {
-                    if (key.includes('supabase') || key.includes('auth')) {
+                    if (key.includes('supabase') || key.includes('auth') || key.includes('sb-') || 
+                        key.toLowerCase().includes('token') || key.toLowerCase().includes('session')) {
+                        console.log('Removing localStorage key:', key);
                         localStorage.removeItem(key);
                     }
                 });
+                
+                // Clear sessionStorage completely
                 sessionStorage.clear();
+                console.log('SessionStorage cleared');
+                
+                // For iOS, be extra aggressive with cache clearing
+                if (isIOS) {
+                    console.log('iOS detected - applying extra cache clearing');
+                    
+                    // Clear any remaining auth-related storage
+                    const remainingKeys = Object.keys(localStorage);
+                    remainingKeys.forEach(key => {
+                        if (key.toLowerCase().includes('auth') || key.toLowerCase().includes('token') || 
+                            key.toLowerCase().includes('session') || key.toLowerCase().includes('user')) {
+                            console.log('Removing iOS auth key:', key);
+                            localStorage.removeItem(key);
+                        }
+                    });
+                    
+                    // Clear any IndexedDB auth data
+                    if ('indexedDB' in window) {
+                        try {
+                            indexedDB.deleteDatabase('supabase');
+                            indexedDB.deleteDatabase('auth');
+                        } catch (e) {
+                            console.warn('Could not clear IndexedDB:', e);
+                        }
+                    }
+                }
+                
+                console.log('Cache clearing completed');
             } catch (e) {
-                console.warn('Could not clear storage:', e);
+                console.warn('Error during cache clearing:', e);
             }
-        }
+        })();
     </script>
 </head>
 <body>
@@ -269,21 +321,34 @@
                 if (authScreen) {
                     authScreen.style.display = 'flex';
                 }
-            }, 5000); // 5 second timeout
+                // Ensure main auth screen is visible
+                const authMain = document.getElementById('authMain');
+                if (authMain) {
+                    authMain.style.display = '';
+                }
+            }, 3000); // Reduced to 3 second timeout for faster recovery
             
             try {
+                // Force clear any remaining auth state before app initialization
+                if (window.clearAuthState) {
+                    await window.clearAuthState();
+                }
+                
                 window.wantApp = new WantApp();
                 
                 // Clear timeout if app initializes successfully
-                window.wantApp.initialized = new Promise((resolve) => {
-                    setTimeout(() => {
-                        clearTimeout(loadingTimeout);
-                        resolve();
-                    }, 1000);
-                });
+                setTimeout(() => {
+                    if (window.loadingTimeout) {
+                        clearTimeout(window.loadingTimeout);
+                        window.loadingTimeout = null;
+                    }
+                }, 1000);
             } catch (error) {
                 console.error('App initialization failed:', error);
-                clearTimeout(loadingTimeout);
+                if (window.loadingTimeout) {
+                    clearTimeout(window.loadingTimeout);
+                    window.loadingTimeout = null;
+                }
                 // Force show login screen on error
                 const loader = document.getElementById('initial-loader');
                 if (loader) {
@@ -292,6 +357,10 @@
                 const authScreen = document.getElementById('auth-screen');
                 if (authScreen) {
                     authScreen.style.display = 'flex';
+                }
+                const authMain = document.getElementById('authMain');
+                if (authMain) {
+                    authMain.style.display = '';
                 }
             }
         });
