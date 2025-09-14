@@ -553,10 +553,11 @@ async function showAppForUser(user) {
     
     // Check if we should skip real-time sync on mobile Safari (if it keeps failing)
     const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-    const skipRealtime = isMobileSafari && localStorage.getItem('skip-realtime-sync') === 'true';
+    const skipRealtime = isMobileSafari || localStorage.getItem('skip-realtime-sync') === 'true';
     
     if (skipRealtime) {
-      console.log('Skipping real-time sync on mobile Safari (disabled due to previous failures)');
+      console.log('Skipping real-time sync on mobile Safari (WebSocket unreliable on mobile Safari)');
+      updateSyncStatus?.('DISABLED');
     } else {
       window.__unsubItems = await subscribeItems(
       async (row) => {
@@ -1316,7 +1317,7 @@ export class WantApp {
         
         // Detect mobile Safari and use more frequent sync
         const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-        const syncInterval = isMobileSafari ? 5000 : 30000; // 5s for mobile Safari, 30s for others
+        const syncInterval = isMobileSafari ? 3000 : 30000; // 3s for mobile Safari, 30s for others
         
         console.log(`Starting periodic sync every ${syncInterval/1000}s (Mobile Safari: ${isMobileSafari})`);
         
@@ -1357,6 +1358,17 @@ export class WantApp {
             // Also listen for focus events (when switching back to tab)
             window.addEventListener('focus', () => {
                 console.log('Window focused, triggering sync check...');
+                this.triggerSyncCheck();
+            });
+            
+            // Add sync triggers for user interactions
+            document.addEventListener('click', () => {
+                console.log('User interaction detected, triggering sync check...');
+                this.triggerSyncCheck();
+            });
+            
+            document.addEventListener('touchstart', () => {
+                console.log('Touch interaction detected, triggering sync check...');
                 this.triggerSyncCheck();
             });
         }
@@ -2722,6 +2734,15 @@ export class WantApp {
                 // Replace optimistic card with real card
                 this.reconcileCard(tempId, item);
                 this.showToast('Item added', 'success');
+                
+                // For mobile Safari, trigger a sync check after add
+                const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+                if (isMobileSafari) {
+                    setTimeout(() => {
+                        console.log('Mobile Safari: Triggering sync check after manual add...');
+                        this.triggerSyncCheck();
+                    }, 1000);
+                }
             }
         } catch (error) {
             console.error('addItemDirectly failed', error);
