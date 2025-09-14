@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Want</title>
+    <meta name="description" content="Your personal wishlist - simple and offline">
+    
+            <!-- Web App Manifest -->
+        <link rel="manifest" href="/manifest.webmanifest">
+        
+        <!-- Apple Touch Icons for iOS Home Screen -->
+        <link rel="apple-touch-icon" href="/assets/apple-touch-icon-180.png" sizes="180x180">
+        <link rel="apple-touch-icon" href="/assets/apple-touch-icon-167.png" sizes="167x167">
+        <link rel="apple-touch-icon" href="/assets/apple-touch-icon-152.png" sizes="152x152">
+        <link rel="apple-touch-icon" href="/assets/apple-touch-icon-120.png" sizes="120x120">
+
+        <!-- iOS PWA Meta Tags -->
+                   <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="default">
+        <meta name="apple-mobile-web-app-title" content="Want">
+        
+        <!-- Favicons -->
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+        
+        <meta name="theme-color" content="#ffffff">
+    
+        <!-- Google Fonts - Inter -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+        
+               <link rel="stylesheet" href="styles.css?v=1757872545208">
+    <script>
+        // Supabase environment variables
+        window.__ENV = {
+            SUPABASE_URL: "https://djmvsehwlypqhcqtkman.supabase.co",
+            SUPABASE_ANON: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRqbXZzZWh3bHlwcWhjcXRrbWFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYzMjIzNDksImV4cCI6MjA3MTg5ODM0OX0.1HYABAtbL4vaScem32AxMWdq9s2T0VoNR_TMyn-Uqjk"
+        };
+        
+        // Fix for CORS issues when running locally
+        if (window.location.protocol === 'file:') {
+            console.log('Running locally - some PWA features may be limited');
+        }
+        
+        // Only clear cache when explicitly requested via URL parameter
+        (function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const hasCacheBust = urlParams.has('cb') || urlParams.has('clear-cache');
+            
+            console.log('Page load - checking for cache clear request:', {
+                hasCacheBust,
+                url: window.location.href
+            });
+            
+            if (hasCacheBust) {
+                console.log('Cache clear requested - clearing auth cache');
+                
+                // Clear all auth-related storage
+                try {
+                    // Clear localStorage auth keys
+                    const keys = Object.keys(localStorage);
+                    keys.forEach(key => {
+                        if (key.includes('supabase') || key.includes('auth') || key.includes('sb-') || key.includes('gotrue')) {
+                            localStorage.removeItem(key);
+                        }
+                    });
+                    
+                    // Clear sessionStorage completely
+                    sessionStorage.clear();
+                    
+                    // Clear IndexedDB auth data if possible
+                    if ('indexedDB' in window) {
+                        indexedDB.deleteDatabase('supabase-auth-token');
+                    }
+                    
+                    console.log('Auth cache cleared successfully');
+                } catch (e) {
+                    console.warn('Error clearing storage:', e);
+                }
+            } else {
+                console.log('Normal page load - preserving auth state');
+            }
+        })();
+    </script>
+</head>
+<body>
+    <!-- Initial Loading Spinner -->
+    <div id="initial-loader" class="initial-loader">
+        <div class="loader-spinner">
+            <div class="spinner"></div>
+        </div>
+        <div class="loader-text">Loading...</div>
+    </div>
+
+    <header id="topbar" class="topbar" style="display: none;">
+        <div class="topbar-inner">
+            <div class="header-left">
+                <img src="assets/want.svg" alt="Want" class="logo" />
+            </div>
+            <div class="header-actions">
+                <button id="settingsBtn" class="settings-btn" title="Settings">
+                    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12.0005 15C13.6573 15 15.0005 13.6569 15.0005 12C15.0005 10.3431 13.6573 9 12.0005 9C10.3436 9 9.00049 10.3431 9.00049 12C9.00049 13.6569 10.3436 15 12.0005 15Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M9.28957 19.3711L9.87402 20.6856C10.0478 21.0768 10.3313 21.4093 10.6902 21.6426C11.0492 21.8759 11.4681 22.0001 11.8962 22C12.3244 22.0001 12.7433 21.8759 13.1022 21.6426C13.4612 21.4093 13.7447 21.0768 13.9185 20.6856L14.5029 19.3711C14.711 18.9047 15.0609 18.5159 15.5029 18.26C15.9477 18.0034 16.4622 17.8941 16.9729 17.9478L18.4029 18.1C18.8286 18.145 19.2582 18.0656 19.6396 17.8713C20.021 17.6771 20.3379 17.3763 20.5518 17.0056C20.766 16.635 20.868 16.2103 20.8455 15.7829C20.823 15.3555 20.677 14.9438 20.4251 14.5978L19.5785 13.4344C19.277 13.0171 19.1159 12.5148 19.1185 12C19.1184 11.4866 19.281 10.9864 19.5829 10.5711L20.4296 9.40778C20.6814 9.06175 20.8275 8.65007 20.85 8.22267C20.8725 7.79528 20.7704 7.37054 20.5562 7C20.3423 6.62923 20.0255 6.32849 19.644 6.13423C19.2626 5.93997 18.833 5.86053 18.4074 5.90556L16.9774 6.05778C16.4667 6.11141 15.9521 6.00212 15.5074 5.74556C15.0645 5.48825 14.7144 5.09736 14.5074 4.62889L13.9185 3.31444C13.7447 2.92317 13.4612 2.59072 13.1022 2.3574C12.7433 2.12408 12.3244 1.99993 11.8962 2C11.4681 1.99993 11.0492 2.12408 10.6902 2.3574C10.3313 2.59072 10.0478 2.92317 9.87402 3.31444L9.28957 4.62889C9.0825 5.09736 8.73245 5.48825 8.28957 5.74556C7.84479 6.00212 7.33024 6.11141 6.81957 6.05778L5.38513 5.90556C4.95946 5.86053 4.52987 5.93997 4.14844 6.13423C3.76702 6.32849 3.45014 6.62923 3.23624 7C3.02206 7.37054 2.92002 7.79528 2.94251 8.22267C2.96499 8.65007 3.11103 9.06175 3.36291 9.40778L4.20957 10.5711C4.51151 10.9864 4.67411 11.4866 4.67402 12C4.67411 12.5134 4.51151 13.0137 4.20957 13.4289L3.36291 14.5922C3.11103 14.9382 2.96499 15.3499 2.94251 15.7773C2.92002 16.2047 3.02206 16.6295 3.23624 17C3.45036 17.3706 3.76727 17.6712 4.14864 17.8654C4.53001 18.0596 4.95949 18.1392 5.38513 18.0944L6.81513 17.9422C7.3258 17.8886 7.84034 17.9979 8.28513 18.2544C8.72966 18.511 9.08134 18.902 9.28957 19.3711Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <button id="openAddBtn" class="add-btn">
+                    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <button id="avatarBtn" class="avatar-btn" aria-label="Account" hidden>
+                    <img id="avatarImg" alt="" />
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Top transparent gradient -->
+    <div class="top-gradient"></div>
+
+    <!-- Auth Screen -->
+    <div id="auth-screen" class="auth-screen" hidden>
+        <!-- Email OTP Screen -->
+        <div id="otpMain" class="auth-screen" style="display: none;">
+            <div class="auth-content">
+                <img src="assets/want.svg" alt="Want" class="auth-logo" />
+                <h1>Enter Code</h1>
+                <p>We sent a 6-digit code to</p>
+                <p id="otpEmail" class="otp-email"></p>
+                
+                <div class="otp-form">
+                    <div id="otpGrid" class="otp-grid">
+                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*">
+                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*">
+                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*">
+                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*">
+                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*">
+                        <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*">
+                    </div>
+                    
+                    <div id="otpMsg" class="auth-message"></div>
+                    
+                    <div class="otp-actions">
+                        <button id="btnOtpVerify" class="btn-primary">Verify Code</button>
+                        <button id="btnOtpBack" class="btn-secondary">Back</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Auth Screen -->
+        <div id="authMain" class="auth-screen">
+            <img src="assets/want.svg" alt="Want" class="auth-logo" />
+            <div class="auth-subtitle">Your smarter shopping list.</div>
+            
+            <!-- Email OTP Section -->
+            <div class="auth-email-section">
+                <div class="form-group">
+                    <input type="email" id="authEmail" placeholder="Enter your email" autocomplete="email">
+                </div>
+                <button id="btnEmailContinue" class="btn-primary">Continue with Email</button>
+                <div id="authMsg" class="auth-message"></div>
+            </div>
+            
+            <div class="auth-divider"></div>
+            
+            <button id="btnGoogle" class="auth-btn auth-btn-google">
+                <span class="gmark"></span>
+                Continue with Google
+            </button>
+        </div>
+
+        <!-- Email Confirmation Screen -->
+        <div id="emailConfirm" class="auth-screen" style="display: none;">
+            <div class="auth-content">
+                <img src="assets/want.svg" alt="Want" class="auth-logo" />
+                <img src="assets/email.png" alt="Email" class="email-illustration" />
+                <h1 class="confirm-title">Check your inbox</h1>
+                <div class="confirm-description">
+                    <p>We've sent you a magic link to <span id="confirmEmail" class="user-email"></span>.</p>
+                    <p>Click the link in your email to log in.</p>
+                    <p>If you don't see the email, check your spam folder.</p>
+                </div>
+                <div class="confirm-actions">
+                    <button id="btnConfirmBack" class="btn-secondary">Back</button>
+                    <button id="btnEnterCode" class="btn-primary">Enter code manually</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <main id="appMain" class="main">
+        <div id="storeTags" class="store-tags" role="tablist" aria-label="Stores"></div>
+        
+        <div id="itemsGrid" class="items-grid">
+            <!-- Items will be populated here -->
+        </div>
+        
+        <div id="emptyState" class="empty-state" style="display: none;">
+            <img src="assets/empty.png" alt="" class="empty-image">
+            <p>Your want list is empty</p>
+            <p>Add your first item to get started</p>
+        </div>
+    </main>
+
+    <!-- gradient/blur veil at the very bottom (behind tabbar) -->
+    <div id="bottomBlur" class="bottom-blur" aria-hidden="true"></div>
+
+    <!-- Bottom Sheet Backdrop -->
+    <div id="sheet-backdrop" class="sheet-backdrop" hidden></div>
+
+    <!-- Bottom Sheet -->
+    <div id="sheet" class="sheet" role="dialog" aria-modal="true" hidden>
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <div class="sheet-content" id="sheet-content">
+            <!-- Dynamic content goes here -->
+        </div>
+    </div>
+
+
+
+    <!-- Toast -->
+    <div id="toast" class="toast"></div>
+
+    <!-- More menu (reused for all cards) -->
+    <div id="moreMenuBackdrop" class="menu-backdrop" hidden></div>
+    <div id="moreMenu" class="menu" role="menu" hidden>
+        <button type="button" class="menu-item" data-action="share" role="menuitem">Share</button>
+        <button type="button" class="menu-item" data-action="copy" role="menuitem">Copy link</button>
+        <button type="button" class="menu-item danger" data-action="delete" role="menuitem">Delete</button>
+    </div>
+
+        
+
+    <script src="vendor/idb.min.js"></script>
+    <script src="db.js?v=1757872545208"></script>
+    <script type="module">
+        // Import and initialize the app
+                       import { WantApp } from './app.js?v=1757872545208';
+        
+        // Create app instance when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            // Force hard refresh if cache-busting parameter is present
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('cb')) {
+                // Clear all caches aggressively
+                if ('caches' in window) {
+                    caches.keys().then(names => {
+                        names.forEach(name => {
+                            caches.delete(name);
+                        });
+                    });
+                }
+                
+                // Clear service worker cache
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(registrations => {
+                        registrations.forEach(registration => {
+                            registration.unregister();
+                        });
+                    });
+                }
+                
+                // Remove cache-busting parameter and reload
+                const newUrl = window.location.pathname + window.location.search.replace(/[?&]cb=\d+/, '').replace(/[?&]v=\d+/, '').replace(/^\?&/, '?').replace(/^\?$/, '');
+                window.history.replaceState({}, document.title, newUrl);
+                
+                // Force reload with fresh cache
+                window.location.reload(true);
+                return;
+            }
+            
+            // Set a timeout to prevent infinite loading
+            window.loadingTimeout = setTimeout(() => {
+                console.warn('App initialization timeout - forcing login screen');
+                const loader = document.getElementById('initial-loader');
+                if (loader) {
+                    loader.classList.add('hidden');
+                }
+                // Force show login screen
+                const authScreen = document.getElementById('auth-screen');
+                if (authScreen) {
+                    authScreen.style.display = 'flex';
+                }
+                // Ensure main auth screen is visible
+                const authMain = document.getElementById('authMain');
+                if (authMain) {
+                    authMain.style.display = '';
+                }
+            }, 3000); // Reduced to 3 second timeout for faster recovery
+            
+            try {
+                window.wantApp = new WantApp();
+                
+                // Clear timeout if app initializes successfully
+                setTimeout(() => {
+                    if (window.loadingTimeout) {
+                        clearTimeout(window.loadingTimeout);
+                        window.loadingTimeout = null;
+                    }
+                }, 1000);
+            } catch (error) {
+                console.error('App initialization failed:', error);
+                if (window.loadingTimeout) {
+                    clearTimeout(window.loadingTimeout);
+                    window.loadingTimeout = null;
+                }
+                // Force show login screen on error
+                const loader = document.getElementById('initial-loader');
+                if (loader) {
+                    loader.classList.add('hidden');
+                }
+                const authScreen = document.getElementById('auth-screen');
+                if (authScreen) {
+                    authScreen.style.display = 'flex';
+                }
+                const authMain = document.getElementById('authMain');
+                if (authMain) {
+                    authMain.style.display = '';
+                }
+            }
+        });
+        
+        // Register service worker only in production to avoid dev reload loops
+        if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
+            navigator.serviceWorker.register('sw.js').then(reg => {
+                // Force SKIP_WAITING if a waiting worker exists
+                if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+
+                reg.addEventListener('updatefound', () => {
+                    const sw = reg.installing;
+                    if (!sw) return;
+                    sw.addEventListener('statechange', () => {
+                        if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+                            // New version ready — reload to get fresh JS/CSS
+                            window.location.reload();
+                        }
+                    });
+                });
+            });
+        }
+    </script>
+</body>
+</html>
