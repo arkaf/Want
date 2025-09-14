@@ -609,24 +609,16 @@ async function showAppForUser(user) {
     if (window.wantApp) {
       window.wantApp.startPeriodicSync();
       
-      // For mobile Safari, trigger immediate sync check
-      const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-      if (isMobileSafari) {
-        console.log('Mobile Safari detected - triggering immediate sync check');
-        setTimeout(() => {
-          window.wantApp.triggerSyncCheck();
-        }, 2000); // Wait 2 seconds for app to fully initialize
-      }
+      // Trigger initial sync check after app loads
+      setTimeout(() => {
+        window.wantApp.triggerSyncCheck();
+      }, 2000); // Wait 2 seconds for app to fully initialize
     }
   } catch (error) {
     console.error('❌ Failed to initialize real-time sync:', error);
     
-    // On mobile Safari, disable real-time sync if it keeps failing
-    const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-    if (isMobileSafari) {
-      console.log('Disabling real-time sync on mobile Safari due to persistent failures');
-      localStorage.setItem('skip-realtime-sync', 'true');
-    }
+    // Log error but continue with periodic sync
+    console.log('Real-time sync failed, continuing with periodic sync');
     
     // Show user-friendly message
     if (window.wantApp && window.wantApp.showToast) {
@@ -1310,14 +1302,10 @@ export class WantApp {
         
         console.log('Item deletion UI update completed');
         
-        // Additional check: if we're on mobile Safari, also trigger a sync check after a short delay
-        const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-        if (isMobileSafari) {
-            setTimeout(() => {
-                console.log('Mobile Safari: Double-checking sync after delete...');
-                this.triggerSyncCheck();
-            }, 2000);
-        }
+        // Trigger sync check after delete
+        setTimeout(() => {
+            this.triggerSyncCheck();
+        }, 2000);
     }
 
     // Periodic sync as fallback for real-time sync issues
@@ -1330,7 +1318,7 @@ export class WantApp {
         // Use normal sync interval for all devices
         const syncInterval = 30000; // 30 seconds for all devices
         
-        console.log(`Starting periodic sync every ${syncInterval/1000}s (Mobile Safari: ${isMobileSafari})`);
+        console.log(`Starting periodic sync every ${syncInterval/1000}s`);
         
         this.syncInterval = setInterval(async () => {
             try {
