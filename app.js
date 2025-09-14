@@ -1362,28 +1362,6 @@ export class WantApp {
         
         console.log('Periodic sync started as fallback');
         
-        // Add refresh button handler
-        const refreshBtn = document.getElementById('refreshBtn');
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', async () => {
-                console.log('🔄 Refresh button clicked');
-                refreshBtn.disabled = true;
-                refreshBtn.style.opacity = '0.5';
-                
-                try {
-                    // Clear cache and force reload all data from Supabase
-                    this.dataManager.clearCache();
-                    await this.loadItems();
-                    this.showToast('App refreshed');
-                } catch (error) {
-                    console.error('❌ Refresh failed:', error);
-                    this.showToast('Refresh failed: ' + error.message, 'error');
-                } finally {
-                    refreshBtn.disabled = false;
-                    refreshBtn.style.opacity = '1';
-                }
-            });
-        }
         
         // Simple visibility change handler for all devices
         document.addEventListener('visibilitychange', () => {
