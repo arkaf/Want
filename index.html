@@ -242,90 +242,13 @@
     <!-- IndexedDB removed - using Supabase only -->
     <script type="module">
         // Import and initialize the app
-                       import { WantApp } from './app.js?v=1757882000000';
-        
-        // Create app instance when DOM is loaded
-        document.addEventListener('DOMContentLoaded', () => {
-            // Force hard refresh if cache-busting parameter is present
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.has('cb')) {
-                // Clear all caches aggressively
-                if ('caches' in window) {
-                    caches.keys().then(names => {
-                        names.forEach(name => {
-                            caches.delete(name);
-                        });
-                    });
-                }
-                
-                // Clear service worker cache
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.getRegistrations().then(registrations => {
-                        registrations.forEach(registration => {
-                            registration.unregister();
-                        });
-                    });
-                }
-                
-                // Remove cache-busting parameter and reload
-                const newUrl = window.location.pathname + window.location.search.replace(/[?&]cb=\d+/, '').replace(/[?&]v=\d+/, '').replace(/^\?&/, '?').replace(/^\?$/, '');
-                window.history.replaceState({}, document.title, newUrl);
-                
-                // Force reload with fresh cache
-                window.location.reload(true);
-                return;
-            }
-            
-            // Set a timeout to prevent infinite loading
-            window.loadingTimeout = setTimeout(() => {
-                console.warn('App initialization timeout - forcing login screen');
-                const loader = document.getElementById('initial-loader');
-                if (loader) {
-                    loader.classList.add('hidden');
-                }
-                // Force show login screen
-                const authScreen = document.getElementById('auth-screen');
-                if (authScreen) {
-                    authScreen.style.display = 'flex';
-                }
-                // Ensure main auth screen is visible
-                const authMain = document.getElementById('authMain');
-                if (authMain) {
-                    authMain.style.display = '';
-                }
-            }, 3000); // Reduced to 3 second timeout for faster recovery
-            
-            try {
-                window.wantApp = new WantApp();
-                
-                // Clear timeout if app initializes successfully
-                setTimeout(() => {
-                    if (window.loadingTimeout) {
-                        clearTimeout(window.loadingTimeout);
-                        window.loadingTimeout = null;
-                    }
-                }, 1000);
-            } catch (error) {
-                console.error('App initialization failed:', error);
-                if (window.loadingTimeout) {
-                    clearTimeout(window.loadingTimeout);
-                    window.loadingTimeout = null;
-                }
-                // Force show login screen on error
-                const loader = document.getElementById('initial-loader');
-                if (loader) {
-                    loader.classList.add('hidden');
-                }
-                const authScreen = document.getElementById('auth-screen');
-                if (authScreen) {
-                    authScreen.style.display = 'flex';
-                }
-                const authMain = document.getElementById('authMain');
-                if (authMain) {
-                    authMain.style.display = '';
-                }
-            }
+        const timestamp = Date.now();
+        import(`./app.js?v=${timestamp}`).then(module => {
+            const { WantApp } = module;
+            window.wantApp = new WantApp();
         });
+        
+        // App initialization is now handled in the dynamic import above
         
         // Register service worker only in production to avoid dev reload loops
         if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
