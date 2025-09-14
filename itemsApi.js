@@ -99,6 +99,12 @@ export async function subscribeItems(onInsert, onDelete, updateSyncStatus) {
       },
       (payload) => {
         console.log('Real-time DELETE received:', payload);
+        console.log('DELETE payload details:', {
+          old: payload.old,
+          eventType: payload.eventType,
+          schema: payload.schema,
+          table: payload.table
+        });
         onDelete?.(payload.old);
       }
     )

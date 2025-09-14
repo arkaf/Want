@@ -578,11 +578,21 @@ async function showAppForUser(user) {
       updateSyncStatus
     );
     console.log('✅ Real-time sync initialized successfully');
+    
+    // Start periodic sync as fallback
+    if (window.wantApp) {
+      window.wantApp.startPeriodicSync();
+    }
   } catch (error) {
     console.error('❌ Failed to initialize real-time sync:', error);
     // Show user-friendly message
     if (window.wantApp && window.wantApp.showToast) {
       window.wantApp.showToast('Real-time sync unavailable - changes may not sync across devices', 'warning');
+    }
+    
+    // Start periodic sync as fallback even if real-time fails
+    if (window.wantApp) {
+      window.wantApp.startPeriodicSync();
     }
   }
 }
@@ -834,6 +844,8 @@ export class WantApp {
         this.pasteTimer = null;
         this.addInFlight = false; // NEW: prevents double-firing
         this.items = []; // Initialize items array
+        this.lastSyncTime = Date.now();
+        this.syncInterval = null; // For periodic sync fallback
         
         // Wait for DOM to be ready before initializing
         if (document.readyState === 'loading') {
@@ -1154,11 +1166,15 @@ export class WantApp {
 
     async loadItems() {
         try {
+            console.log('Loading items from Supabase...');
             const items = await this.dataManager.getItems();
+            console.log('Loaded items:', items.length);
             this.items = items; // Store items in instance
             this.renderItems(items);
+            this.updateStats();
         } catch (error) {
             console.error('Error loading items:', error);
+            this.showToast('Failed to load items', 'error');
         }
     }
 
@@ -1199,11 +1215,58 @@ export class WantApp {
     }
 
     onItemDeleted(itemId) {
+        console.log('onItemDeleted called with itemId:', itemId);
+        console.log('Current items before deletion:', this.items.length);
+        
         // Remove from local array
         this.items = this.items.filter(item => item.id !== itemId);
         
+        console.log('Items after deletion:', this.items.length);
+        
         // Re-render the grid
         this.renderItems(this.items);
+        
+        // Update stats
+        this.updateStats();
+        
+        console.log('Item deletion UI update completed');
+    }
+
+    // Periodic sync as fallback for real-time sync issues
+    startPeriodicSync() {
+        // Clear any existing interval
+        if (this.syncInterval) {
+            clearInterval(this.syncInterval);
+        }
+        
+        // Sync every 30 seconds as fallback
+        this.syncInterval = setInterval(async () => {
+            try {
+                console.log('Periodic sync check...');
+                const freshItems = await this.dataManager.getItems();
+                
+                // Check if items have changed
+                if (freshItems.length !== this.items.length) {
+                    console.log('Items changed during periodic sync, updating UI');
+                    this.items = freshItems;
+                    this.renderItems(this.items);
+                    this.updateStats();
+                }
+            } catch (error) {
+                console.error('Periodic sync failed:', error);
+            }
+        }, 30000); // 30 seconds
+        
+        console.log('Periodic sync started as fallback');
+    }
+
+    // Stop periodic sync
+    stopPeriodicSync() {
+        if (this.syncInterval) {
+            clearInterval(this.syncInterval);
+            this.syncInterval = null;
+            console.log('Periodic sync stopped');
+        }
     }
 
 
