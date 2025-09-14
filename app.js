@@ -557,12 +557,12 @@ async function showAppForUser(user) {
   try {
     if (window.__unsubItems) window.__unsubItems();
     
-    // Check if we should skip real-time sync on mobile Safari (if it keeps failing)
+    // Try real-time sync for all devices, with better error handling
     const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-    const skipRealtime = isMobileSafari || localStorage.getItem('skip-realtime-sync') === 'true';
+    const skipRealtime = localStorage.getItem('skip-realtime-sync') === 'true';
     
     if (skipRealtime) {
-      console.log('Skipping real-time sync on mobile Safari (WebSocket unreliable on mobile Safari)');
+      console.log('Real-time sync disabled by user preference');
       updateSyncStatus?.('DISABLED');
     } else {
       window.__unsubItems = await subscribeItems(
@@ -1206,8 +1206,10 @@ export class WantApp {
                 syncBtn.disabled = true;
                 syncBtn.textContent = 'Syncing...';
                 try {
-                    await this.triggerSyncCheck();
-                    this.showToast('Sync completed');
+                    // Force fresh data fetch
+                    this.dataManager.clearCache();
+                    await this.loadItems();
+                    this.showToast('Data refreshed from server');
                 } catch (error) {
                     console.error('Manual sync failed:', error);
                     this.showToast('Sync failed', 'error');
@@ -1374,13 +1376,37 @@ export class WantApp {
         console.log('Periodic sync started as fallback');
         
         
-        // Simple visibility change handler for all devices
+        // Enhanced visibility change handler for all devices
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
-                console.log('App became visible, triggering sync check...');
-                this.triggerSyncCheck();
+                console.log('App became visible, triggering fresh data fetch...');
+                // Clear cache and force fresh fetch
+                this.dataManager.clearCache();
+                this.loadItems();
             }
         });
+        
+        // Additional handlers for mobile Safari
+        if (isMobileSafari) {
+            // Page show/hide events for better mobile coverage
+            window.addEventListener('pageshow', () => {
+                console.log('📱 Page shown, triggering fresh data fetch...');
+                this.dataManager.clearCache();
+                this.loadItems();
+            });
+            
+            window.addEventListener('pagehide', () => {
+                console.log('📱 Page hidden, clearing cache...');
+                this.dataManager.clearCache();
+            });
+            
+            // Focus events
+            window.addEventListener('focus', () => {
+                console.log('📱 Window focused, triggering fresh data fetch...');
+                this.dataManager.clearCache();
+                this.loadItems();
+            });
+        }
         
         // Add immediate sync triggers for mobile Safari
         if (isMobileSafari) {

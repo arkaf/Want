@@ -1,5 +1,5 @@
 // Service Worker for Want PWA
-const CACHE_NAME = 'want-v74';
+const CACHE_NAME = 'want-v75';
 const urlsToCache = [
     '/',
     '/index.html',
@@ -28,22 +28,28 @@ self.addEventListener('install', event => {
 self.addEventListener('fetch', event => {
     const u = new URL(event.request.url);
     
-                    // Bypass cache for add flow and parser
-        if (
-            u.pathname.startsWith('/add') ||
-            u.pathname.startsWith('/extract') ||
-            u.pathname.startsWith('/extract') ||   // alias, if still used
-            u.hash.startsWith('#add=')
-        ) {
-            event.respondWith((async () => {
-                try {
-                    return await fetch(event.request, { cache: 'no-store' });
-                } catch (e) {
-                    return new Response('Network error', { status: 502 });
-                }
-            })());
-            return;
-        }
+    // Bypass cache for Supabase requests
+    if (u.hostname.includes('supabase.co')) {
+        event.respondWith(fetch(event.request, { cache: 'no-store' }));
+        return;
+    }
+    
+    // Bypass cache for add flow and parser
+    if (
+        u.pathname.startsWith('/add') ||
+        u.pathname.startsWith('/extract') ||
+        u.pathname.startsWith('/extract') ||   // alias, if still used
+        u.hash.startsWith('#add=')
+    ) {
+        event.respondWith((async () => {
+            try {
+                return await fetch(event.request, { cache: 'no-store' });
+            } catch (e) {
+                return new Response('Network error', { status: 502 });
+            }
+        })());
+        return;
+    }
     
     if (u.pathname.startsWith('/api/')) {
         event.respondWith(fetch(event.request, { cache: 'no-store' }));

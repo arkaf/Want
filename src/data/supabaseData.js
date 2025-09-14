@@ -20,11 +20,14 @@ export class SupabaseDataManager {
       }
 
       console.log('📡 Fetching items from Supabase for user:', user.id);
+      
+      // Force fresh fetch with cache-busting headers
       const { data, error } = await supabase
         .from('items')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .abortSignal(AbortSignal.timeout(10000)); // 10 second timeout
 
       console.log('📊 Supabase response:', { dataCount: data?.length, error });
 
