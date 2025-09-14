@@ -2884,5 +2884,11 @@ export class WantApp {
         return false;
     }
 
+    // Update stats display (placeholder for now)
+    updateStats() {
+        // This method is called but there's no stats display in the current UI
+        // It's safe to leave it empty or add stats functionality later
+        console.log('Stats updated - items count:', this.items.length);
+    }
 
 }
