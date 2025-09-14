@@ -96,6 +96,44 @@ button, .btn {
     gap: 0.75rem;
 }
 
+.sync-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    opacity: 0.8;
+}
+
+.sync-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #ffa500;
+    animation: pulse 2s infinite;
+}
+
+.sync-indicator.connected {
+    background-color: #4caf50;
+    animation: none;
+}
+
+.sync-indicator.error {
+    background-color: #f44336;
+    animation: none;
+}
+
+.sync-text {
+    font-size: 0.7rem;
+    font-weight: 500;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
 .logo {
     height: 24px;
     width: auto;

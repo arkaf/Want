@@ -23,6 +23,26 @@ const PASTE_DEBOUNCE_MS = 120;
 // Simple router helpers for auth
 const $ = (s) => document.querySelector(s);
 
+// Sync status management
+function updateSyncStatus(status) {
+  const syncStatus = document.getElementById('syncStatus');
+  if (!syncStatus) return;
+  
+  const indicator = syncStatus.querySelector('.sync-indicator');
+  const text = syncStatus.querySelector('.sync-text');
+  
+  if (status === 'SUBSCRIBED') {
+    indicator.className = 'sync-indicator connected';
+    text.textContent = 'Synced';
+  } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+    indicator.className = 'sync-indicator error';
+    text.textContent = 'Offline';
+  } else {
+    indicator.className = 'sync-indicator';
+    text.textContent = 'Syncing...';
+  }
+}
+
 // Keep the email used for OTP
 let pendingEmail = '';
 
@@ -533,34 +553,51 @@ async function showAppForUser(user) {
     console.error('Failed to load items:', error);
   }
 
-  // 2) Realtime sync
-  if (window.__unsubItems) window.__unsubItems();
-  window.__unsubItems = subscribeItems(
-    async (row) => {
-      console.log('Real-time item added:', row);
-      // Sync to IndexedDB
-      if (window.wantApp && window.wantApp.db) {
-        await window.wantApp.db.addOrUpdateItem(row);
-        console.log('Synced new item to IndexedDB');
+  // 2) Realtime sync with error handling
+  try {
+    if (window.__unsubItems) window.__unsubItems();
+    window.__unsubItems = await subscribeItems(
+      async (row) => {
+        console.log('Real-time item added:', row);
+        try {
+          // Sync to IndexedDB
+          if (window.wantApp && window.wantApp.db) {
+            await window.wantApp.db.addOrUpdateItem(row);
+            console.log('Synced new item to IndexedDB');
+          }
+          // Update UI
+          if (window.wantApp && window.wantApp.onItemAdded) {
+            window.wantApp.onItemAdded(row);
+          }
+        } catch (error) {
+          console.error('Error handling real-time item add:', error);
+        }
+      },
+      async (row) => {
+        console.log('Real-time item deleted:', row);
+        try {
+          // Sync to IndexedDB
+          if (window.wantApp && window.wantApp.db) {
+            await window.wantApp.db.deleteItem(row.id);
+            console.log('Synced item deletion to IndexedDB');
+          }
+          // Update UI
+          if (window.wantApp && window.wantApp.onItemDeleted) {
+            window.wantApp.onItemDeleted(row.id);
+          }
+        } catch (error) {
+          console.error('Error handling real-time item delete:', error);
+        }
       }
-      // Update UI
-      if (window.wantApp && window.wantApp.onItemAdded) {
-        window.wantApp.onItemAdded(row);
-      }
-    },
-    async (row) => {
-      console.log('Real-time item deleted:', row);
-      // Sync to IndexedDB
-      if (window.wantApp && window.wantApp.db) {
-        await window.wantApp.db.deleteItem(row.id);
-        console.log('Synced item deletion to IndexedDB');
-      }
-      // Update UI
-      if (window.wantApp && window.wantApp.onItemDeleted) {
-        window.wantApp.onItemDeleted(row.id);
-      }
+    );
+    console.log('✅ Real-time sync initialized successfully');
+  } catch (error) {
+    console.error('❌ Failed to initialize real-time sync:', error);
+    // Show user-friendly message
+    if (window.wantApp && window.wantApp.showToast) {
+      window.wantApp.showToast('Real-time sync unavailable - changes may not sync across devices', 'warning');
     }
-  );
+  }
 }
 
 function showLoginScreen() {
@@ -2590,7 +2627,7 @@ export class WantApp {
                     thumb.appendChild(img);
                 }
             } else {
-                // Keep placeholder state
+                
                 thumb.classList.add('placeholder', 'no-image');
                 
                 const existingMedia = thumb.querySelector('img, video');

@@ -71,7 +71,7 @@ export async function clearAuthState() {
         // Clear sessionStorage completely
         sessionStorage.clear();
         
-        // Clear IndexedDB auth databases
+        
         if ('indexedDB' in window) {
             try {
                 await indexedDB.deleteDatabase('supabase-auth-token');

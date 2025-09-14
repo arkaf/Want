@@ -102,7 +102,7 @@ export class QuickAdd {
     //     } catch (error) {
     //         console.log('enrichFromMeta failed:', error.message);
     //         return null;
-    //     }
+    
     
 
     showError(message) {

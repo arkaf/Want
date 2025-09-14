@@ -319,7 +319,7 @@ class WantDB {
             itemMap.set(item.url, item);
         }
         
-        // Merge cloud items, keeping the most recent version
+        
         for (const cloudItem of cloudItems) {
             const localItem = itemMap.get(cloudItem.url);
             if (!localItem || cloudItem.createdAt > localItem.createdAt) {

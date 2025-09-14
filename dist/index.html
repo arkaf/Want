@@ -31,7 +31,7 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
         
-               <link rel="stylesheet" href="styles.css?v=1757874850747">
+               <link rel="stylesheet" href="styles.css?v=1757877849943">
     <script>
         // Supabase environment variables
         window.__ENV = {
@@ -98,6 +98,10 @@
         <div class="topbar-inner">
             <div class="header-left">
                 <img src="assets/want.svg" alt="Want" class="logo" />
+                <div id="syncStatus" class="sync-status" title="Real-time sync status">
+                    <div class="sync-indicator"></div>
+                    <span class="sync-text">Syncing...</span>
+                </div>
             </div>
             <div class="header-actions">
                 <button id="settingsBtn" class="settings-btn" title="Settings">
@@ -236,10 +240,10 @@
         
 
     <script src="vendor/idb.min.js"></script>
-    <script src="db.js?v=1757874850747"></script>
+    <script src="db.js?v=1757877849943"></script>
     <script type="module">
         // Import and initialize the app
-                       import { WantApp } from './app.js?v=1757874850747';
+                       import { WantApp } from './app.js?v=1757877849943';
         
         // Create app instance when DOM is loaded
         document.addEventListener('DOMContentLoaded', () => {
