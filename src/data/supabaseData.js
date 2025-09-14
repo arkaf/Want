@@ -9,20 +9,27 @@ export class SupabaseDataManager {
   // Get all items for the current user
   async getItems() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      console.log('🔍 SupabaseDataManager.getItems() called');
+      
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      console.log('👤 User auth result:', { user: user?.id, error: userError });
+      
       if (!user) {
-        console.log('No user authenticated, returning empty items');
+        console.log('❌ No user authenticated, returning empty items');
         return [];
       }
 
+      console.log('📡 Fetching items from Supabase for user:', user.id);
       const { data, error } = await supabase
         .from('items')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
+      console.log('📊 Supabase response:', { dataCount: data?.length, error });
+
       if (error) {
-        console.error('Error fetching items:', error);
+        console.error('❌ Error fetching items:', error);
         return [];
       }
 
@@ -30,9 +37,10 @@ export class SupabaseDataManager {
       this.cache.clear();
       data?.forEach(item => this.cache.set(item.id, item));
 
+      console.log('✅ Returning items:', data?.length || 0);
       return data || [];
     } catch (error) {
-      console.error('Error in getItems:', error);
+      console.error('❌ Error in getItems:', error);
       return [];
     }
   }
@@ -155,5 +163,29 @@ export class SupabaseDataManager {
   // Clear cache
   clearCache() {
     this.cache.clear();
+  }
+
+  // Test Supabase connection
+  async testConnection() {
+    try {
+      console.log('🧪 Testing Supabase connection...');
+      
+      // Test auth
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      console.log('🔐 Auth test:', { user: user?.id, error: authError });
+      
+      // Test database access
+      const { data, error } = await supabase
+        .from('items')
+        .select('id')
+        .limit(1);
+      
+      console.log('🗄️ Database test:', { data, error });
+      
+      return { auth: !!user, database: !error };
+    } catch (error) {
+      console.error('❌ Connection test failed:', error);
+      return { auth: false, database: false, error };
+    }
   }
 }

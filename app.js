@@ -905,6 +905,11 @@ export class WantApp {
         // Initialize Supabase auth
         await authInit();
         
+        // Test Supabase connection
+        console.log('🧪 Testing Supabase connection on mobile Safari...');
+        const connectionTest = await this.dataManager.testConnection();
+        console.log('🔍 Connection test result:', connectionTest);
+        
         // Wire UI immediately when DOM is ready
         this.wireUI();
         this.enableGlobalPaste();
@@ -1379,6 +1384,27 @@ export class WantApp {
             forceSyncBtn.addEventListener('click', () => {
                 console.log('🧪 Force sync button clicked');
                 this.triggerSyncCheck();
+            });
+        }
+
+        // Add test connection button handler
+        const testConnectionBtn = document.getElementById('testConnectionBtn');
+        if (testConnectionBtn) {
+            testConnectionBtn.addEventListener('click', async () => {
+                console.log('🧪 Test connection button clicked');
+                testConnectionBtn.disabled = true;
+                testConnectionBtn.textContent = 'Testing...';
+                try {
+                    const result = await this.dataManager.testConnection();
+                    console.log('🔍 Test result:', result);
+                    this.showToast(`DB Test: Auth=${result.auth}, DB=${result.database}`);
+                } catch (error) {
+                    console.error('❌ Test failed:', error);
+                    this.showToast('Test failed: ' + error.message, 'error');
+                } finally {
+                    testConnectionBtn.disabled = false;
+                    testConnectionBtn.textContent = 'Test DB';
+                }
             });
         }
         
