@@ -588,7 +588,8 @@ async function showAppForUser(user) {
         } catch (error) {
           console.error('Error handling real-time item delete:', error);
         }
-      }
+      },
+      updateSyncStatus
     );
     console.log('✅ Real-time sync initialized successfully');
   } catch (error) {
