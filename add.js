@@ -17,14 +17,34 @@ export class QuickAdd {
     async processUrlParams() {
         const urlParams = new URLSearchParams(window.location.search);
         const url = urlParams.get('url');
+        const title = urlParams.get('title');
+        const domain = urlParams.get('domain');
 
         if (!url) {
             this.showError('No URL provided');
             return;
         }
 
-        // Extract metadata and redirect to home page
-        const meta = await this.extractMeta(url).catch(() => ({ url }));
+        // Use provided title and domain from bookmarklet if available
+        let meta = { url };
+        
+        if (title) {
+            meta.title = title;
+        }
+        
+        if (domain) {
+            meta.domain = domain;
+        }
+
+        // Only extract metadata if we don't have title/domain from bookmarklet
+        if (!title || !domain) {
+            try {
+                const extractedMeta = await this.extractMeta(url);
+                meta = { ...meta, ...extractedMeta };
+            } catch (e) {
+                console.warn('Failed to extract metadata:', e);
+            }
+        }
         
         // Build Home URL under /Want/ (GitHub Pages project)
         const HOME_URL = new URL('./index.html', location.href).href;
