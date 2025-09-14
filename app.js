@@ -1,16 +1,16 @@
 // Supabase functionality will be accessed via window.db
 
 // Import the new modular architecture
-import { ItemManager } from './src/data/items.js';
 import { renderCard } from './src/ui/renderCard.js';
 import { isProbablyUrl } from './src/utils/url.js';
 import { openSheet, closeSheet } from './src/ui/bottomSheet.js';
 import { EXTRACT_ENDPOINT } from './src/config.js';
 import { withStableBust } from './src/utils/cacheBust.js';
+import { SupabaseDataManager } from './src/data/supabaseData.js';
 
 // Import Supabase auth and items API
 import { supabase } from './supabaseClient.js';
-import { loadItems, addItem, deleteItem, subscribeItems } from './itemsApi.js';
+import { subscribeItems } from './itemsApi.js';
 import { sendEmailOtp, verifyEmailOtp, signInWithGoogle, getCurrentUser, logout, clearAuthState } from './auth.js';
 
 // Track pending adds to prevent duplicates
@@ -532,16 +532,10 @@ async function showAppForUser(user) {
 
   // 1) Load initial items and sync between Supabase and IndexedDB
   try {
-    const items = await loadItems(); // Load from Supabase
+    const items = await window.wantApp.dataManager.getItems(); // Load from Supabase
     console.log('Loaded items from Supabase:', items.length);
     
-    // Sync items to IndexedDB for offline access
-    if (window.wantApp && window.wantApp.db) {
-      for (const item of items) {
-        await window.wantApp.db.addOrUpdateItem(item);
-      }
-      console.log('Synced items to IndexedDB');
-    }
+        // Items are now stored only in Supabase - no local sync needed
     
     if (window.wantApp && window.wantApp.renderItems) {
       window.wantApp.items = items; // Store items in the instance
@@ -560,11 +554,7 @@ async function showAppForUser(user) {
       async (row) => {
         console.log('Real-time item added:', row);
         try {
-          // Sync to IndexedDB
-          if (window.wantApp && window.wantApp.db) {
-            await window.wantApp.db.addOrUpdateItem(row);
-            console.log('Synced new item to IndexedDB');
-          }
+          // Item is already in Supabase - no local sync needed
           // Update UI
           if (window.wantApp && window.wantApp.onItemAdded) {
             window.wantApp.onItemAdded(row);
@@ -576,11 +566,7 @@ async function showAppForUser(user) {
       async (row) => {
         console.log('Real-time item deleted:', row);
         try {
-          // Sync to IndexedDB
-          if (window.wantApp && window.wantApp.db) {
-            await window.wantApp.db.deleteItem(row.id);
-            console.log('Synced item deletion to IndexedDB');
-          }
+          // Item is already deleted from Supabase - no local sync needed
           // Update UI
           if (window.wantApp && window.wantApp.onItemDeleted) {
             window.wantApp.onItemDeleted(row.id);
@@ -843,8 +829,7 @@ function positionPopoverBelow(pop, anchorEl) {
 // Main application logic
 export class WantApp {
     constructor() {
-        this.db = new WantDB();
-        this.itemManager = new ItemManager(this.db);
+        this.dataManager = new SupabaseDataManager();
         this.selectedStore = null; // null = All
         this.pasteTimer = null;
         this.addInFlight = false; // NEW: prevents double-firing
@@ -1169,7 +1154,7 @@ export class WantApp {
 
     async loadItems() {
         try {
-            const items = await this.db.getAllItems();
+            const items = await this.dataManager.getItems();
             this.items = items; // Store items in instance
             this.renderItems(items);
         } catch (error) {
@@ -1540,36 +1525,12 @@ export class WantApp {
         return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
     }
 
-    async upsertItem(item) {
-        try {
-            // Check if item with same URL exists
-            const existingItem = await this.db.getItemByUrl(item.url);
-            if (existingItem) {
-                // Update existing item
-                const updatedItem = { 
-                    ...existingItem, 
-                    title: item.title,
-                    price: item.price,
-                    image: item.image,
-                    createdAt: Date.now() // Refresh timestamp
-                };
-                await this.db.db.put(this.db.storeName, updatedItem);
-                return existingItem.id;
-            } else {
-                // Add new item
-                const newItem = await this.db.addItem(item);
-                return newItem.id;
-            }
-        } catch (error) {
-            console.error('Error upserting item:', error);
-            throw error;
-        }
-    }
+    // upsertItem method removed - now using dataManager.addOrUpdateItem directly
 
     async deleteItem(id) {
         try {
             // Delete from Supabase
-            await deleteItem(id);
+            await this.dataManager.deleteItem(id);
             
             // Update local items array
             this.items = this.items.filter(item => item.id !== id);
@@ -2260,7 +2221,7 @@ export class WantApp {
                     if (ok) {
                         try {
                             // Delete from Supabase
-                            await deleteItem(item.id);
+                            await this.dataManager.deleteItem(item.id);
                             
                             // Update local items array
                             this.items = this.items.filter(i => i.id !== item.id);
@@ -2338,12 +2299,8 @@ export class WantApp {
             // Enrich + write once
             (async () => {
                 try {
-                    // If server already sent title/image/price, prefer them, otherwise enrich again if needed
-                    const final = await this.itemManager.upsertFromMetaOrFetch(payload);
-                    
-                    // Save to both IndexedDB and Supabase
-                    await this.db.addOrUpdateItem(final); // Save to IndexedDB
-                    await addItem(final); // Save to Supabase
+                    // Save to Supabase only
+                    const final = await this.dataManager.addOrUpdateItem(payload); // Save to Supabase only
                     
                     this.reconcileCard(tempId, final);
                     this.showToast('Item added');
@@ -2511,7 +2468,7 @@ export class WantApp {
                 metadata = this.extractBasicMetadata(url);
             }
             
-            // Add item to both Supabase and IndexedDB
+            // Add item to Supabase only
             const itemData = {
                 url: url,
                 title: metadata.title || '',
@@ -2520,8 +2477,7 @@ export class WantApp {
                 price: metadata.price || ''
             };
             
-            const item = await addItem(itemData); // Save to Supabase
-            await this.db.addOrUpdateItem(item); // Save to IndexedDB
+            const item = await this.dataManager.addOrUpdateItem(itemData); // Save to Supabase only
             
             // When the worker returns, update only if it's a real image or video
             if (item && item.video && item.video.trim()) {
