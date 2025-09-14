@@ -1329,7 +1329,7 @@ export class WantApp {
         
         // Detect mobile Safari and use more frequent sync
         const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-        const syncInterval = isMobileSafari ? 2000 : 30000; // 2s for mobile Safari, 30s for others
+        const syncInterval = isMobileSafari ? 1000 : 30000; // 1s for mobile Safari, 30s for others
         
         console.log(`Starting periodic sync every ${syncInterval/1000}s (Mobile Safari: ${isMobileSafari})`);
         
@@ -1368,9 +1368,12 @@ export class WantApp {
                 } else {
                     console.log('ℹ️ No changes detected during periodic sync');
                     
-                    // For debugging: Force a UI update every 10 syncs to test if renderItems works
-                    if (this.syncCount % 10 === 0) {
-                        console.log('🧪 Debug: Force re-rendering UI to test if renderItems works');
+                    // For mobile Safari, force UI update more frequently
+                    const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+                    const forceUpdateInterval = isMobileSafari ? 3 : 10; // Every 3 syncs for mobile Safari, 10 for others
+                    
+                    if (this.syncCount % forceUpdateInterval === 0) {
+                        console.log(`📱 Force re-rendering UI (${isMobileSafari ? 'Mobile Safari' : 'Debug'})`);
                         this.renderItems(this.items);
                         this.updateStats();
                     }
@@ -1416,29 +1419,58 @@ export class WantApp {
         if (isMobileSafari) {
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden) {
-                    console.log('App became visible, triggering sync check...');
+                    console.log('📱 App became visible, triggering immediate sync...');
+                    // Clear cache and force immediate sync
+                    this.dataManager.clearCache();
                     this.triggerSyncCheck();
+                    
+                    // Also trigger a second sync after a short delay for mobile Safari
+                    setTimeout(() => {
+                        console.log('📱 Mobile Safari: Secondary sync after visibility change');
+                        this.triggerSyncCheck();
+                    }, 2000);
                 }
             });
             
             // Also listen for focus events (when switching back to tab)
             window.addEventListener('focus', () => {
-                console.log('Window focused, triggering sync check...');
+                console.log('📱 Window focused, triggering immediate sync...');
+                this.dataManager.clearCache();
                 this.triggerSyncCheck();
             });
             
-            // Add debounced sync triggers for user interactions
-            let interactionTimeout;
-            const debouncedSync = () => {
-                clearTimeout(interactionTimeout);
-                interactionTimeout = setTimeout(() => {
-                    console.log('User interaction detected, triggering sync check...');
-                    this.triggerSyncCheck();
-                }, 500); // 500ms debounce
+            // Add page show/hide events for better mobile Safari coverage
+            window.addEventListener('pageshow', () => {
+                console.log('📱 Page shown, triggering sync...');
+                this.triggerSyncCheck();
+            });
+            
+            window.addEventListener('pagehide', () => {
+                console.log('📱 Page hidden, clearing cache...');
+                this.dataManager.clearCache();
+            });
+            
+            // Add immediate sync triggers for user interactions (no debounce for mobile Safari)
+            const immediateSync = () => {
+                console.log('User interaction detected, triggering immediate sync...');
+                this.triggerSyncCheck();
             };
             
-            document.addEventListener('click', debouncedSync);
-            document.addEventListener('touchstart', debouncedSync);
+            // Add multiple event listeners for comprehensive coverage
+            document.addEventListener('click', immediateSync);
+            document.addEventListener('touchstart', immediateSync);
+            document.addEventListener('touchend', immediateSync);
+            document.addEventListener('scroll', immediateSync);
+            document.addEventListener('resize', immediateSync);
+            
+            // Add sync triggers for specific UI elements
+            const addButton = document.getElementById('openAddBtn');
+            const settingsButton = document.getElementById('settingsBtn');
+            const forceSyncButton = document.getElementById('forceSyncBtn');
+            
+            if (addButton) addButton.addEventListener('click', immediateSync);
+            if (settingsButton) settingsButton.addEventListener('click', immediateSync);
+            if (forceSyncButton) forceSyncButton.addEventListener('click', immediateSync);
         }
     }
 
@@ -1447,6 +1479,16 @@ export class WantApp {
         try {
             this.syncCount++;
             console.log(`🔄 Manual sync check triggered (#${this.syncCount})...`);
+            
+            // For mobile Safari, always force a full reload to ensure we get the latest data
+            const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+            
+            if (isMobileSafari) {
+                console.log('📱 Mobile Safari detected - forcing full data reload');
+                // Clear any potential cache
+                this.dataManager.clearCache();
+            }
+            
             const freshItems = await this.dataManager.getItems();
             
             // Check if items have changed
@@ -1467,6 +1509,13 @@ export class WantApp {
                 this.updateStats();
             } else {
                 console.log('ℹ️ No changes detected during manual sync');
+                
+                // For mobile Safari, force UI update every 5 syncs even if no changes detected
+                if (isMobileSafari && this.syncCount % 5 === 0) {
+                    console.log('📱 Mobile Safari: Force updating UI even without changes');
+                    this.renderItems(this.items);
+                    this.updateStats();
+                }
             }
         } catch (error) {
             console.error('❌ Manual sync check failed:', error);
@@ -1821,13 +1870,22 @@ export class WantApp {
             this.updateStats();
             this.showToast('Item deleted', 'success');
             
-            // For mobile Safari, also trigger a sync check after delete
+            // For mobile Safari, trigger multiple sync checks after delete
             const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
             if (isMobileSafari) {
+                console.log('📱 Mobile Safari: Triggering immediate sync after delete...');
+                this.triggerSyncCheck();
+                
+                // Also trigger delayed syncs for mobile Safari
                 setTimeout(() => {
-                    console.log('Mobile Safari: Triggering sync check after manual delete...');
+                    console.log('📱 Mobile Safari: Delayed sync after delete (1s)...');
                     this.triggerSyncCheck();
                 }, 1000);
+                
+                setTimeout(() => {
+                    console.log('📱 Mobile Safari: Final sync after delete (3s)...');
+                    this.triggerSyncCheck();
+                }, 3000);
             }
         } catch (error) {
             console.error('Error deleting item:', error);
@@ -2808,13 +2866,22 @@ export class WantApp {
                 this.reconcileCard(tempId, item);
                 this.showToast('Item added', 'success');
                 
-                // For mobile Safari, trigger a sync check after add
+                // For mobile Safari, trigger multiple sync checks after add
                 const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
                 if (isMobileSafari) {
+                    console.log('📱 Mobile Safari: Triggering immediate sync after add...');
+                    this.triggerSyncCheck();
+                    
+                    // Also trigger delayed syncs for mobile Safari
                     setTimeout(() => {
-                        console.log('Mobile Safari: Triggering sync check after manual add...');
+                        console.log('📱 Mobile Safari: Delayed sync after add (1s)...');
                         this.triggerSyncCheck();
                     }, 1000);
+                    
+                    setTimeout(() => {
+                        console.log('📱 Mobile Safari: Final sync after add (3s)...');
+                        this.triggerSyncCheck();
+                    }, 3000);
                 }
             }
         } catch (error) {
