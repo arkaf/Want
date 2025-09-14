@@ -565,11 +565,21 @@ async function showAppForUser(user) {
       },
       async (row) => {
         console.log('Real-time item deleted:', row);
+        console.log('Delete event details:', {
+          id: row.id,
+          userAgent: navigator.userAgent,
+          isMobileSafari: /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent)
+        });
         try {
           // Item is already deleted from Supabase - no local sync needed
           // Update UI
           if (window.wantApp && window.wantApp.onItemDeleted) {
+            console.log('Calling onItemDeleted for item:', row.id);
             window.wantApp.onItemDeleted(row.id);
+          } else {
+            console.error('window.wantApp or onItemDeleted not available!');
+            console.log('window.wantApp:', window.wantApp);
+            console.log('onItemDeleted method:', window.wantApp?.onItemDeleted);
           }
         } catch (error) {
           console.error('Error handling real-time item delete:', error);
@@ -1217,11 +1227,23 @@ export class WantApp {
     onItemDeleted(itemId) {
         console.log('onItemDeleted called with itemId:', itemId);
         console.log('Current items before deletion:', this.items.length);
+        console.log('Items before deletion:', this.items.map(item => ({ id: item.id, title: item.title })));
         
         // Remove from local array
+        const beforeCount = this.items.length;
         this.items = this.items.filter(item => item.id !== itemId);
+        const afterCount = this.items.length;
         
-        console.log('Items after deletion:', this.items.length);
+        console.log('Items after deletion:', afterCount);
+        console.log('Items after deletion:', this.items.map(item => ({ id: item.id, title: item.title })));
+        
+        // Check if the item was actually removed
+        if (beforeCount === afterCount) {
+            console.warn('Item was not found in local array, forcing full refresh...');
+            // Force a full refresh from server
+            this.loadItems();
+            return;
+        }
         
         // Re-render the grid
         this.renderItems(this.items);
@@ -1230,6 +1252,15 @@ export class WantApp {
         this.updateStats();
         
         console.log('Item deletion UI update completed');
+        
+        // Additional check: if we're on mobile Safari, also trigger a sync check after a short delay
+        const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+        if (isMobileSafari) {
+            setTimeout(() => {
+                console.log('Mobile Safari: Double-checking sync after delete...');
+                this.triggerSyncCheck();
+            }, 2000);
+        }
     }
 
     // Periodic sync as fallback for real-time sync issues
@@ -1645,15 +1676,30 @@ export class WantApp {
 
     async deleteItem(id) {
         try {
+            console.log('Deleting item:', id);
+            console.log('Items before delete:', this.items.length);
+            
             // Delete from Supabase
             await this.dataManager.deleteItem(id);
             
             // Update local items array
             this.items = this.items.filter(item => item.id !== id);
             
+            console.log('Items after delete:', this.items.length);
+            
             // Re-render the grid with updated items
             this.renderItems(this.items);
+            this.updateStats();
             this.showToast('Item deleted', 'success');
+            
+            // For mobile Safari, also trigger a sync check after delete
+            const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+            if (isMobileSafari) {
+                setTimeout(() => {
+                    console.log('Mobile Safari: Triggering sync check after manual delete...');
+                    this.triggerSyncCheck();
+                }, 1000);
+            }
         } catch (error) {
             console.error('Error deleting item:', error);
             this.showToast('Error deleting item', 'error');
