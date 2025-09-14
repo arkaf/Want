@@ -1239,15 +1239,26 @@ export class WantApp {
             clearInterval(this.syncInterval);
         }
         
-        // Sync every 30 seconds as fallback
+        // Detect mobile Safari and use more frequent sync
+        const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+        const syncInterval = isMobileSafari ? 10000 : 30000; // 10s for mobile Safari, 30s for others
+        
+        console.log(`Starting periodic sync every ${syncInterval/1000}s (Mobile Safari: ${isMobileSafari})`);
+        
         this.syncInterval = setInterval(async () => {
             try {
                 console.log('Periodic sync check...');
                 const freshItems = await this.dataManager.getItems();
                 
-                // Check if items have changed
-                if (freshItems.length !== this.items.length) {
+                // Check if items have changed (by count or by comparing IDs)
+                const currentIds = this.items.map(item => item.id).sort();
+                const freshIds = freshItems.map(item => item.id).sort();
+                const hasChanged = freshItems.length !== this.items.length || 
+                                 JSON.stringify(currentIds) !== JSON.stringify(freshIds);
+                
+                if (hasChanged) {
                     console.log('Items changed during periodic sync, updating UI');
+                    console.log('Previous count:', this.items.length, 'New count:', freshItems.length);
                     this.items = freshItems;
                     this.renderItems(this.items);
                     this.updateStats();
@@ -1255,9 +1266,51 @@ export class WantApp {
             } catch (error) {
                 console.error('Periodic sync failed:', error);
             }
-        }, 30000); // 30 seconds
+        }, syncInterval);
         
         console.log('Periodic sync started as fallback');
+        
+        // Add visibility change handler for mobile Safari
+        if (isMobileSafari) {
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) {
+                    console.log('App became visible, triggering sync check...');
+                    this.triggerSyncCheck();
+                }
+            });
+            
+            // Also listen for focus events (when switching back to tab)
+            window.addEventListener('focus', () => {
+                console.log('Window focused, triggering sync check...');
+                this.triggerSyncCheck();
+            });
+        }
+    }
+
+    // Trigger immediate sync check
+    async triggerSyncCheck() {
+        try {
+            console.log('Manual sync check triggered...');
+            const freshItems = await this.dataManager.getItems();
+            
+            // Check if items have changed
+            const currentIds = this.items.map(item => item.id).sort();
+            const freshIds = freshItems.map(item => item.id).sort();
+            const hasChanged = freshItems.length !== this.items.length || 
+                             JSON.stringify(currentIds) !== JSON.stringify(freshIds);
+            
+            if (hasChanged) {
+                console.log('Items changed during manual sync, updating UI');
+                console.log('Previous count:', this.items.length, 'New count:', freshItems.length);
+                this.items = freshItems;
+                this.renderItems(this.items);
+                this.updateStats();
+            } else {
+                console.log('No changes detected during manual sync');
+            }
+        } catch (error) {
+            console.error('Manual sync failed:', error);
+        }
     }
 
     // Stop periodic sync
