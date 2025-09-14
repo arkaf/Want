@@ -1347,12 +1347,16 @@ export class WantApp {
                 const hasChanged = freshItems.length !== this.items.length || 
                                  JSON.stringify(currentIds) !== JSON.stringify(freshIds);
                 
-                console.log('Has changed:', hasChanged);
-                console.log('Current IDs:', currentIds);
-                console.log('Fresh IDs:', freshIds);
-                console.log('Current IDs JSON:', JSON.stringify(currentIds));
-                console.log('Fresh IDs JSON:', JSON.stringify(freshIds));
-                console.log('IDs match:', JSON.stringify(currentIds) === JSON.stringify(freshIds));
+            console.log('Has changed:', hasChanged);
+            console.log('Current IDs:', currentIds);
+            console.log('Fresh IDs:', freshIds);
+            console.log('Current IDs JSON:', JSON.stringify(currentIds));
+            console.log('Fresh IDs JSON:', JSON.stringify(freshIds));
+            console.log('IDs match:', JSON.stringify(currentIds) === JSON.stringify(freshIds));
+            
+            // Show first few characters of each ID for easier comparison
+            console.log('Current ID samples:', currentIds.slice(0, 3).map(id => id.substring(0, 8) + '...'));
+            console.log('Fresh ID samples:', freshIds.slice(0, 3).map(id => id.substring(0, 8) + '...'));
                 
                 if (hasChanged) {
                     console.log('✅ Items changed during periodic sync, updating UI');
@@ -1451,14 +1455,18 @@ export class WantApp {
             const hasChanged = freshItems.length !== this.items.length || 
                              JSON.stringify(currentIds) !== JSON.stringify(freshIds);
             
+            console.log('Has changed:', hasChanged);
+            console.log('Current ID samples:', currentIds.slice(0, 3).map(id => id.substring(0, 8) + '...'));
+            console.log('Fresh ID samples:', freshIds.slice(0, 3).map(id => id.substring(0, 8) + '...'));
+            
             if (hasChanged) {
-                console.log('Items changed during manual sync, updating UI');
+                console.log('✅ Items changed during manual sync, updating UI');
                 console.log('Previous count:', this.items.length, 'New count:', freshItems.length);
                 this.items = freshItems;
                 this.renderItems(this.items);
                 this.updateStats();
             } else {
-                console.log('No changes detected during manual sync');
+                console.log('ℹ️ No changes detected during manual sync');
             }
         } catch (error) {
             console.error('❌ Manual sync check failed:', error);
