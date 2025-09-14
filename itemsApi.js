@@ -73,7 +73,9 @@ export async function subscribeItems(onInsert, onDelete, updateSyncStatus) {
     .channel('items-changes', {
       config: {
         broadcast: { self: false },
-        presence: { key: 'items' }
+        presence: { key: 'items' },
+        // Mobile Safari WebSocket optimization
+        heartbeat: { interval: 30000, timeout: 60000 }
       }
     })
     .on(
@@ -121,11 +123,17 @@ export async function subscribeItems(onInsert, onDelete, updateSyncStatus) {
       } else if (status === 'CHANNEL_ERROR') {
         console.error('❌ Real-time sync error:', err);
         
+        // Check if it's a mobile Safari WebSocket issue
+        const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+        const retryDelay = isMobileSafari ? 10000 : 3000; // Longer delay for mobile Safari
+        
+        console.log(`Retrying real-time subscription after ${retryDelay/1000}s (Mobile Safari: ${isMobileSafari})...`);
+        
         // Retry after a delay
         setTimeout(() => {
           console.log('Retrying real-time subscription after error...');
           subscribeItems(onInsert, onDelete, updateSyncStatus);
-        }, 3000);
+        }, retryDelay);
       } else if (status === 'TIMED_OUT') {
         console.warn('⏰ Real-time sync timed out, retrying...');
         

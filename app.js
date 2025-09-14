@@ -550,7 +550,15 @@ async function showAppForUser(user) {
   // 2) Realtime sync with error handling
   try {
     if (window.__unsubItems) window.__unsubItems();
-    window.__unsubItems = await subscribeItems(
+    
+    // Check if we should skip real-time sync on mobile Safari (if it keeps failing)
+    const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+    const skipRealtime = isMobileSafari && localStorage.getItem('skip-realtime-sync') === 'true';
+    
+    if (skipRealtime) {
+      console.log('Skipping real-time sync on mobile Safari (disabled due to previous failures)');
+    } else {
+      window.__unsubItems = await subscribeItems(
       async (row) => {
         console.log('Real-time item added:', row);
         try {
@@ -588,6 +596,7 @@ async function showAppForUser(user) {
       updateSyncStatus
     );
     console.log('✅ Real-time sync initialized successfully');
+    }
     
     // Start periodic sync as fallback
     if (window.wantApp) {
@@ -595,6 +604,14 @@ async function showAppForUser(user) {
     }
   } catch (error) {
     console.error('❌ Failed to initialize real-time sync:', error);
+    
+    // On mobile Safari, disable real-time sync if it keeps failing
+    const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+    if (isMobileSafari) {
+      console.log('Disabling real-time sync on mobile Safari due to persistent failures');
+      localStorage.setItem('skip-realtime-sync', 'true');
+    }
+    
     // Show user-friendly message
     if (window.wantApp && window.wantApp.showToast) {
       window.wantApp.showToast('Real-time sync unavailable - changes may not sync across devices', 'warning');
@@ -876,8 +893,7 @@ export class WantApp {
         this.enableGlobalPaste();
         this.hydrateFromQueryParams();
         
-        // Initialize database (keep for local caching if needed)
-        await this.db.init();
+        // Database initialization removed - using Supabase only
         
         // Guard duplicate IDs forever
         ['openAddBtn','addItemBtn','urlInput','addForm'].forEach(id => {
