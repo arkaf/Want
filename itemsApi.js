@@ -125,7 +125,21 @@ export async function subscribeItems(onInsert, onDelete, updateSyncStatus) {
         
         // Check if it's a mobile Safari WebSocket issue
         const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-        const retryDelay = isMobileSafari ? 10000 : 3000; // Longer delay for mobile Safari
+        
+        // For mobile Safari, disable real-time sync after multiple failures
+        if (isMobileSafari) {
+          const failureCount = parseInt(localStorage.getItem('realtime-failures') || '0') + 1;
+          localStorage.setItem('realtime-failures', failureCount.toString());
+          
+          if (failureCount >= 3) {
+            console.log('Too many real-time sync failures on mobile Safari, disabling real-time sync');
+            localStorage.setItem('skip-realtime-sync', 'true');
+            updateSyncStatus?.('DISABLED');
+            return;
+          }
+        }
+        
+        const retryDelay = isMobileSafari ? 15000 : 5000; // Longer delay for mobile Safari
         
         console.log(`Retrying real-time subscription after ${retryDelay/1000}s (Mobile Safari: ${isMobileSafari})...`);
         

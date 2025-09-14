@@ -601,6 +601,15 @@ async function showAppForUser(user) {
     // Start periodic sync as fallback
     if (window.wantApp) {
       window.wantApp.startPeriodicSync();
+      
+      // For mobile Safari, trigger immediate sync check
+      const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+      if (isMobileSafari) {
+        console.log('Mobile Safari detected - triggering immediate sync check');
+        setTimeout(() => {
+          window.wantApp.triggerSyncCheck();
+        }, 2000); // Wait 2 seconds for app to fully initialize
+      }
     }
   } catch (error) {
     console.error('❌ Failed to initialize real-time sync:', error);
@@ -1079,6 +1088,7 @@ export class WantApp {
                     <div class="settings-actions">
                         <button id="exportBtn" class="btn-secondary">Export Data</button>
                         <button id="importBtn" class="btn-secondary">Import Data</button>
+                        <button id="syncBtn" class="btn-secondary">Manual Sync</button>
                     </div>
                     <input type="file" id="importFile" accept=".json" style="display: none;">
                 </div>
@@ -1166,6 +1176,7 @@ export class WantApp {
         const exportBtn = document.getElementById('exportBtn');
         const importBtn = document.getElementById('importBtn');
         const importFile = document.getElementById('importFile');
+        const syncBtn = document.getElementById('syncBtn');
 
         if (exportBtn) {
             exportBtn.addEventListener('click', () => {
@@ -1182,6 +1193,23 @@ export class WantApp {
         if (importFile) {
             importFile.addEventListener('change', (e) => {
                 this.importData(e.target.files[0]);
+            });
+        }
+
+        if (syncBtn) {
+            syncBtn.addEventListener('click', async () => {
+                syncBtn.disabled = true;
+                syncBtn.textContent = 'Syncing...';
+                try {
+                    await this.triggerSyncCheck();
+                    this.showToast('Sync completed');
+                } catch (error) {
+                    console.error('Manual sync failed:', error);
+                    this.showToast('Sync failed', 'error');
+                } finally {
+                    syncBtn.disabled = false;
+                    syncBtn.textContent = 'Manual Sync';
+                }
             });
         }
     }
@@ -1288,7 +1316,7 @@ export class WantApp {
         
         // Detect mobile Safari and use more frequent sync
         const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-        const syncInterval = isMobileSafari ? 10000 : 30000; // 10s for mobile Safari, 30s for others
+        const syncInterval = isMobileSafari ? 5000 : 30000; // 5s for mobile Safari, 30s for others
         
         console.log(`Starting periodic sync every ${syncInterval/1000}s (Mobile Safari: ${isMobileSafari})`);
         
