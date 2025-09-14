@@ -31,15 +31,21 @@ function updateSyncStatus(status) {
   const indicator = syncStatus.querySelector('.sync-indicator');
   const text = syncStatus.querySelector('.sync-text');
   
+  // Check if mobile Safari
+  const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+  
   if (status === 'SUBSCRIBED') {
     indicator.className = 'sync-indicator connected';
     text.textContent = 'Synced';
+  } else if (status === 'DISABLED') {
+    indicator.className = 'sync-indicator error';
+    text.textContent = isMobileSafari ? 'Periodic Sync' : 'Disabled';
   } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
     indicator.className = 'sync-indicator error';
     text.textContent = 'Offline';
   } else {
     indicator.className = 'sync-indicator';
-    text.textContent = 'Syncing...';
+    text.textContent = isMobileSafari ? 'Periodic Sync' : 'Syncing...';
   }
 }
 
@@ -883,6 +889,7 @@ export class WantApp {
         this.items = []; // Initialize items array
         this.lastSyncTime = Date.now();
         this.syncInterval = null; // For periodic sync fallback
+        this.syncCount = 0; // Debug counter
         
         // Wait for DOM to be ready before initializing
         if (document.readyState === 'loading') {
@@ -1317,14 +1324,17 @@ export class WantApp {
         
         // Detect mobile Safari and use more frequent sync
         const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-        const syncInterval = isMobileSafari ? 3000 : 30000; // 3s for mobile Safari, 30s for others
+        const syncInterval = isMobileSafari ? 2000 : 30000; // 2s for mobile Safari, 30s for others
         
         console.log(`Starting periodic sync every ${syncInterval/1000}s (Mobile Safari: ${isMobileSafari})`);
         
         this.syncInterval = setInterval(async () => {
             try {
-                console.log('Periodic sync check...');
+                this.syncCount++;
+                console.log(`🔄 Periodic sync check (#${this.syncCount})...`);
+                console.log('Current items count:', this.items.length);
                 const freshItems = await this.dataManager.getItems();
+                console.log('Fresh items count:', freshItems.length);
                 
                 // Check if items have changed (by count or by comparing IDs)
                 const currentIds = this.items.map(item => item.id).sort();
@@ -1332,15 +1342,22 @@ export class WantApp {
                 const hasChanged = freshItems.length !== this.items.length || 
                                  JSON.stringify(currentIds) !== JSON.stringify(freshIds);
                 
+                console.log('Has changed:', hasChanged);
+                console.log('Current IDs:', currentIds);
+                console.log('Fresh IDs:', freshIds);
+                
                 if (hasChanged) {
-                    console.log('Items changed during periodic sync, updating UI');
+                    console.log('✅ Items changed during periodic sync, updating UI');
                     console.log('Previous count:', this.items.length, 'New count:', freshItems.length);
                     this.items = freshItems;
                     this.renderItems(this.items);
                     this.updateStats();
+                    console.log('✅ UI updated with fresh items');
+                } else {
+                    console.log('ℹ️ No changes detected during periodic sync');
                 }
             } catch (error) {
-                console.error('Periodic sync failed:', error);
+                console.error('❌ Periodic sync failed:', error);
             }
         }, syncInterval);
         
@@ -1361,23 +1378,26 @@ export class WantApp {
                 this.triggerSyncCheck();
             });
             
-            // Add sync triggers for user interactions
-            document.addEventListener('click', () => {
-                console.log('User interaction detected, triggering sync check...');
-                this.triggerSyncCheck();
-            });
+            // Add debounced sync triggers for user interactions
+            let interactionTimeout;
+            const debouncedSync = () => {
+                clearTimeout(interactionTimeout);
+                interactionTimeout = setTimeout(() => {
+                    console.log('User interaction detected, triggering sync check...');
+                    this.triggerSyncCheck();
+                }, 500); // 500ms debounce
+            };
             
-            document.addEventListener('touchstart', () => {
-                console.log('Touch interaction detected, triggering sync check...');
-                this.triggerSyncCheck();
-            });
+            document.addEventListener('click', debouncedSync);
+            document.addEventListener('touchstart', debouncedSync);
         }
     }
 
     // Trigger immediate sync check
     async triggerSyncCheck() {
         try {
-            console.log('Manual sync check triggered...');
+            this.syncCount++;
+            console.log(`🔄 Manual sync check triggered (#${this.syncCount})...`);
             const freshItems = await this.dataManager.getItems();
             
             // Check if items have changed
@@ -1396,7 +1416,7 @@ export class WantApp {
                 console.log('No changes detected during manual sync');
             }
         } catch (error) {
-            console.error('Manual sync failed:', error);
+            console.error('❌ Manual sync check failed:', error);
         }
     }
 
