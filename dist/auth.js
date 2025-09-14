@@ -81,7 +81,7 @@ export async function clearAuthState() {
             }
         }
         
-        // Clear any cached service worker data
+        
         if ('caches' in window) {
             try {
                 const cacheNames = await caches.keys();

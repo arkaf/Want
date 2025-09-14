@@ -510,9 +510,19 @@ async function showAppForUser(user) {
     });
   });
 
-  // 1) Load initial items
+  // 1) Load initial items and sync between Supabase and IndexedDB
   try {
-    const items = await loadItems();
+    const items = await loadItems(); // Load from Supabase
+    console.log('Loaded items from Supabase:', items.length);
+    
+    // Sync items to IndexedDB for offline access
+    if (window.wantApp && window.wantApp.db) {
+      for (const item of items) {
+        await window.wantApp.db.addOrUpdateItem(item);
+      }
+      console.log('Synced items to IndexedDB');
+    }
+    
     if (window.wantApp && window.wantApp.renderItems) {
       window.wantApp.items = items; // Store items in the instance
       window.wantApp.renderItems(items);
@@ -526,12 +536,26 @@ async function showAppForUser(user) {
   // 2) Realtime sync
   if (window.__unsubItems) window.__unsubItems();
   window.__unsubItems = subscribeItems(
-    (row) => {
+    async (row) => {
+      console.log('Real-time item added:', row);
+      // Sync to IndexedDB
+      if (window.wantApp && window.wantApp.db) {
+        await window.wantApp.db.addOrUpdateItem(row);
+        console.log('Synced new item to IndexedDB');
+      }
+      // Update UI
       if (window.wantApp && window.wantApp.onItemAdded) {
         window.wantApp.onItemAdded(row);
       }
     },
-    (row) => {
+    async (row) => {
+      console.log('Real-time item deleted:', row);
+      // Sync to IndexedDB
+      if (window.wantApp && window.wantApp.db) {
+        await window.wantApp.db.deleteItem(row.id);
+        console.log('Synced item deletion to IndexedDB');
+      }
+      // Update UI
       if (window.wantApp && window.wantApp.onItemDeleted) {
         window.wantApp.onItemDeleted(row.id);
       }
@@ -2568,7 +2592,7 @@ export class WantApp {
             } else {
                 // Keep placeholder state
                 thumb.classList.add('placeholder', 'no-image');
-                // Remove any existing media
+                
                 const existingMedia = thumb.querySelector('img, video');
                 if (existingMedia) existingMedia.remove();
             }

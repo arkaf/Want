@@ -327,7 +327,7 @@ class WantDB {
             }
         }
         
-        // Convert back to array and sort by creation date
+        
         return Array.from(itemMap.values()).sort((a, b) => b.createdAt - a.createdAt);
     }
 }

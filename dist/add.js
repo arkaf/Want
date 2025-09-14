@@ -103,7 +103,7 @@ export class QuickAdd {
     //         console.log('enrichFromMeta failed:', error.message);
     //         return null;
     //     }
-    // }
+    
 
     showError(message) {
         document.getElementById('loadingSpinner').style.display = 'none';
