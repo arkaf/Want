@@ -2148,7 +2148,16 @@ export class WantApp {
 
     async exportData() {
         try {
-            await this.db.exportData();
+            // Export data from Supabase
+            const items = await this.dataManager.getItems();
+            const dataStr = JSON.stringify(items, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `want-backup-${new Date().toISOString().split('T')[0]}.json`;
+            link.click();
+            URL.revokeObjectURL(url);
             this.showToast('Data exported successfully');
         } catch (error) {
             console.error('Error exporting data:', error);
@@ -2161,9 +2170,22 @@ export class WantApp {
         
         try {
             const text = await file.text();
-            const result = await this.db.importData(text);
+            const items = JSON.parse(text);
+            
+            let imported = 0;
+            let updated = 0;
+            
+            for (const item of items) {
+                try {
+                    await this.dataManager.addOrUpdateItem(item);
+                    imported++;
+                } catch (error) {
+                    console.error('Error importing item:', error);
+                }
+            }
+            
             await this.loadItems();
-            this.showToast(`Imported ${result.imported} items, updated ${result.updated} items`);
+            this.showToast(`Imported ${imported} items`);
             this.hideSettingsModal();
         } catch (error) {
             console.error('Error importing data:', error);
@@ -2176,7 +2198,7 @@ export class WantApp {
 
     openEditForUrl(url) {
         // Find the item by URL and open edit modal
-        this.db.getItemByUrl(url).then(item => {
+        this.dataManager.getItemByUrl(url).then(item => {
             if (item) {
                 // Pre-fill the form with existing data
                 document.getElementById('urlInput').value = item.url;
