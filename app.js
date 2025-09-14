@@ -1327,9 +1327,8 @@ export class WantApp {
             clearInterval(this.syncInterval);
         }
         
-        // Detect mobile Safari and use more frequent sync
-        const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-        const syncInterval = isMobileSafari ? 1000 : 30000; // 1s for mobile Safari, 30s for others
+        // Use normal sync interval for all devices
+        const syncInterval = 30000; // 30 seconds for all devices
         
         console.log(`Starting periodic sync every ${syncInterval/1000}s (Mobile Safari: ${isMobileSafari})`);
         
@@ -1367,16 +1366,6 @@ export class WantApp {
                     console.log('✅ UI updated with fresh items');
                 } else {
                     console.log('ℹ️ No changes detected during periodic sync');
-                    
-                    // For mobile Safari, force UI update more frequently
-                    const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-                    const forceUpdateInterval = isMobileSafari ? 3 : 10; // Every 3 syncs for mobile Safari, 10 for others
-                    
-                    if (this.syncCount % forceUpdateInterval === 0) {
-                        console.log(`📱 Force re-rendering UI (${isMobileSafari ? 'Mobile Safari' : 'Debug'})`);
-                        this.renderItems(this.items);
-                        this.updateStats();
-                    }
                 }
             } catch (error) {
                 console.error('❌ Periodic sync failed:', error);
@@ -1385,109 +1374,43 @@ export class WantApp {
         
         console.log('Periodic sync started as fallback');
         
-        // Add force sync button handler
-        const forceSyncBtn = document.getElementById('forceSyncBtn');
-        if (forceSyncBtn) {
-            forceSyncBtn.addEventListener('click', () => {
-                console.log('🧪 Force sync button clicked');
-                this.triggerSyncCheck();
-            });
-        }
-
-        // Add test connection button handler
-        const testConnectionBtn = document.getElementById('testConnectionBtn');
-        if (testConnectionBtn) {
-            testConnectionBtn.addEventListener('click', async () => {
-                console.log('🧪 Test connection button clicked');
-                testConnectionBtn.disabled = true;
-                testConnectionBtn.textContent = 'Testing...';
+        // Add refresh button handler
+        const refreshBtn = document.getElementById('refreshBtn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', async () => {
+                console.log('🔄 Refresh button clicked');
+                refreshBtn.disabled = true;
+                refreshBtn.style.opacity = '0.5';
+                
                 try {
-                    const result = await this.dataManager.testConnection();
-                    console.log('🔍 Test result:', result);
-                    this.showToast(`DB Test: Auth=${result.auth}, DB=${result.database}`);
+                    // Clear cache and force reload all data from Supabase
+                    this.dataManager.clearCache();
+                    await this.loadItems();
+                    this.showToast('App refreshed');
                 } catch (error) {
-                    console.error('❌ Test failed:', error);
-                    this.showToast('Test failed: ' + error.message, 'error');
+                    console.error('❌ Refresh failed:', error);
+                    this.showToast('Refresh failed: ' + error.message, 'error');
                 } finally {
-                    testConnectionBtn.disabled = false;
-                    testConnectionBtn.textContent = 'Test DB';
+                    refreshBtn.disabled = false;
+                    refreshBtn.style.opacity = '1';
                 }
             });
         }
         
-        // Add visibility change handler for mobile Safari
-        if (isMobileSafari) {
-            document.addEventListener('visibilitychange', () => {
-                if (!document.hidden) {
-                    console.log('📱 App became visible, triggering immediate sync...');
-                    // Clear cache and force immediate sync
-                    this.dataManager.clearCache();
-                    this.triggerSyncCheck();
-                    
-                    // Also trigger a second sync after a short delay for mobile Safari
-                    setTimeout(() => {
-                        console.log('📱 Mobile Safari: Secondary sync after visibility change');
-                        this.triggerSyncCheck();
-                    }, 2000);
-                }
-            });
-            
-            // Also listen for focus events (when switching back to tab)
-            window.addEventListener('focus', () => {
-                console.log('📱 Window focused, triggering immediate sync...');
-                this.dataManager.clearCache();
+        // Simple visibility change handler for all devices
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                console.log('App became visible, triggering sync check...');
                 this.triggerSyncCheck();
-            });
-            
-            // Add page show/hide events for better mobile Safari coverage
-            window.addEventListener('pageshow', () => {
-                console.log('📱 Page shown, triggering sync...');
-                this.triggerSyncCheck();
-            });
-            
-            window.addEventListener('pagehide', () => {
-                console.log('📱 Page hidden, clearing cache...');
-                this.dataManager.clearCache();
-            });
-            
-            // Add immediate sync triggers for user interactions (no debounce for mobile Safari)
-            const immediateSync = () => {
-                console.log('User interaction detected, triggering immediate sync...');
-                this.triggerSyncCheck();
-            };
-            
-            // Add multiple event listeners for comprehensive coverage
-            document.addEventListener('click', immediateSync);
-            document.addEventListener('touchstart', immediateSync);
-            document.addEventListener('touchend', immediateSync);
-            document.addEventListener('scroll', immediateSync);
-            document.addEventListener('resize', immediateSync);
-            
-            // Add sync triggers for specific UI elements
-            const addButton = document.getElementById('openAddBtn');
-            const settingsButton = document.getElementById('settingsBtn');
-            const forceSyncButton = document.getElementById('forceSyncBtn');
-            
-            if (addButton) addButton.addEventListener('click', immediateSync);
-            if (settingsButton) settingsButton.addEventListener('click', immediateSync);
-            if (forceSyncButton) forceSyncButton.addEventListener('click', immediateSync);
-        }
+            }
+        });
     }
 
     // Trigger immediate sync check
     async triggerSyncCheck() {
         try {
             this.syncCount++;
-            console.log(`🔄 Manual sync check triggered (#${this.syncCount})...`);
-            
-            // For mobile Safari, always force a full reload to ensure we get the latest data
-            const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-            
-            if (isMobileSafari) {
-                console.log('📱 Mobile Safari detected - forcing full data reload');
-                // Clear any potential cache
-                this.dataManager.clearCache();
-            }
+            console.log(`🔄 Sync check triggered (#${this.syncCount})...`);
             
             const freshItems = await this.dataManager.getItems();
             
@@ -1497,28 +1420,17 @@ export class WantApp {
             const hasChanged = freshItems.length !== this.items.length || 
                              JSON.stringify(currentIds) !== JSON.stringify(freshIds);
             
-            console.log('Has changed:', hasChanged);
-            console.log('Current ID samples:', currentIds.slice(0, 3).map(id => id.substring(0, 8) + '...'));
-            console.log('Fresh ID samples:', freshIds.slice(0, 3).map(id => id.substring(0, 8) + '...'));
-            
             if (hasChanged) {
-                console.log('✅ Items changed during manual sync, updating UI');
+                console.log('✅ Items changed, updating UI');
                 console.log('Previous count:', this.items.length, 'New count:', freshItems.length);
                 this.items = freshItems;
                 this.renderItems(this.items);
                 this.updateStats();
             } else {
-                console.log('ℹ️ No changes detected during manual sync');
-                
-                // For mobile Safari, force UI update every 5 syncs even if no changes detected
-                if (isMobileSafari && this.syncCount % 5 === 0) {
-                    console.log('📱 Mobile Safari: Force updating UI even without changes');
-                    this.renderItems(this.items);
-                    this.updateStats();
-                }
+                console.log('ℹ️ No changes detected');
             }
         } catch (error) {
-            console.error('❌ Manual sync check failed:', error);
+            console.error('❌ Sync check failed:', error);
         }
     }
 
@@ -1870,23 +1782,10 @@ export class WantApp {
             this.updateStats();
             this.showToast('Item deleted', 'success');
             
-            // For mobile Safari, trigger multiple sync checks after delete
-            const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-            if (isMobileSafari) {
-                console.log('📱 Mobile Safari: Triggering immediate sync after delete...');
+            // Trigger a single sync check after delete
+            setTimeout(() => {
                 this.triggerSyncCheck();
-                
-                // Also trigger delayed syncs for mobile Safari
-                setTimeout(() => {
-                    console.log('📱 Mobile Safari: Delayed sync after delete (1s)...');
-                    this.triggerSyncCheck();
-                }, 1000);
-                
-                setTimeout(() => {
-                    console.log('📱 Mobile Safari: Final sync after delete (3s)...');
-                    this.triggerSyncCheck();
-                }, 3000);
-            }
+            }, 1000);
         } catch (error) {
             console.error('Error deleting item:', error);
             this.showToast('Error deleting item', 'error');
@@ -2866,23 +2765,10 @@ export class WantApp {
                 this.reconcileCard(tempId, item);
                 this.showToast('Item added', 'success');
                 
-                // For mobile Safari, trigger multiple sync checks after add
-                const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
-                if (isMobileSafari) {
-                    console.log('📱 Mobile Safari: Triggering immediate sync after add...');
+                // Trigger a single sync check after add
+                setTimeout(() => {
                     this.triggerSyncCheck();
-                    
-                    // Also trigger delayed syncs for mobile Safari
-                    setTimeout(() => {
-                        console.log('📱 Mobile Safari: Delayed sync after add (1s)...');
-                        this.triggerSyncCheck();
-                    }, 1000);
-                    
-                    setTimeout(() => {
-                        console.log('📱 Mobile Safari: Final sync after add (3s)...');
-                        this.triggerSyncCheck();
-                    }, 3000);
-                }
+                }, 1000);
             }
         } catch (error) {
             console.error('addItemDirectly failed', error);
