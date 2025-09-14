@@ -1345,6 +1345,9 @@ export class WantApp {
                 console.log('Has changed:', hasChanged);
                 console.log('Current IDs:', currentIds);
                 console.log('Fresh IDs:', freshIds);
+                console.log('Current IDs JSON:', JSON.stringify(currentIds));
+                console.log('Fresh IDs JSON:', JSON.stringify(freshIds));
+                console.log('IDs match:', JSON.stringify(currentIds) === JSON.stringify(freshIds));
                 
                 if (hasChanged) {
                     console.log('✅ Items changed during periodic sync, updating UI');
@@ -1355,6 +1358,13 @@ export class WantApp {
                     console.log('✅ UI updated with fresh items');
                 } else {
                     console.log('ℹ️ No changes detected during periodic sync');
+                    
+                    // For debugging: Force a UI update every 10 syncs to test if renderItems works
+                    if (this.syncCount % 10 === 0) {
+                        console.log('🧪 Debug: Force re-rendering UI to test if renderItems works');
+                        this.renderItems(this.items);
+                        this.updateStats();
+                    }
                 }
             } catch (error) {
                 console.error('❌ Periodic sync failed:', error);
@@ -1362,6 +1372,15 @@ export class WantApp {
         }, syncInterval);
         
         console.log('Periodic sync started as fallback');
+        
+        // Add force sync button handler
+        const forceSyncBtn = document.getElementById('forceSyncBtn');
+        if (forceSyncBtn) {
+            forceSyncBtn.addEventListener('click', () => {
+                console.log('🧪 Force sync button clicked');
+                this.triggerSyncCheck();
+            });
+        }
         
         // Add visibility change handler for mobile Safari
         if (isMobileSafari) {
