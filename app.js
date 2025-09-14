@@ -1302,10 +1302,20 @@ export class WantApp {
         
         console.log('Item deletion UI update completed');
         
-        // Trigger sync check after delete
-        setTimeout(() => {
-            this.triggerSyncCheck();
-        }, 2000);
+        // Trigger sync checks after delete
+        const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+        if (isMobileSafari) {
+            // Multiple sync checks for mobile Safari
+            this.triggerSyncCheck(); // Immediate
+            setTimeout(() => this.triggerSyncCheck(), 500); // 0.5s
+            setTimeout(() => this.triggerSyncCheck(), 1000); // 1s
+            setTimeout(() => this.triggerSyncCheck(), 2000); // 2s
+        } else {
+            // Single sync check for other devices
+            setTimeout(() => {
+                this.triggerSyncCheck();
+            }, 2000);
+        }
     }
 
     // Periodic sync as fallback for real-time sync issues
@@ -1315,8 +1325,9 @@ export class WantApp {
             clearInterval(this.syncInterval);
         }
         
-        // Use normal sync interval for all devices
-        const syncInterval = 30000; // 30 seconds for all devices
+        // Use faster sync interval for mobile Safari, normal for others
+        const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+        const syncInterval = isMobileSafari ? 5000 : 30000; // 5s for mobile Safari, 30s for others
         
         console.log(`Starting periodic sync every ${syncInterval/1000}s`);
         
@@ -1370,6 +1381,31 @@ export class WantApp {
                 this.triggerSyncCheck();
             }
         });
+        
+        // Add immediate sync triggers for mobile Safari
+        if (isMobileSafari) {
+            console.log('📱 Mobile Safari detected - adding immediate sync triggers');
+            
+            // Sync on user interactions
+            const immediateSync = () => {
+                console.log('📱 User interaction detected, triggering immediate sync...');
+                this.triggerSyncCheck();
+            };
+            
+            // Add multiple event listeners for comprehensive coverage
+            document.addEventListener('click', immediateSync);
+            document.addEventListener('touchstart', immediateSync);
+            document.addEventListener('touchend', immediateSync);
+            document.addEventListener('scroll', immediateSync);
+            document.addEventListener('resize', immediateSync);
+            
+            // Add sync triggers for specific UI elements
+            const addButton = document.getElementById('openAddBtn');
+            const settingsButton = document.getElementById('settingsBtn');
+            
+            if (addButton) addButton.addEventListener('click', immediateSync);
+            if (settingsButton) settingsButton.addEventListener('click', immediateSync);
+        }
     }
 
     // Trigger immediate sync check
@@ -2731,10 +2767,20 @@ export class WantApp {
                 this.reconcileCard(tempId, item);
                 this.showToast('Item added', 'success');
                 
-                // Trigger a single sync check after add
-                setTimeout(() => {
-                    this.triggerSyncCheck();
-                }, 1000);
+                // Trigger sync checks after add
+                const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+                if (isMobileSafari) {
+                    // Multiple sync checks for mobile Safari
+                    this.triggerSyncCheck(); // Immediate
+                    setTimeout(() => this.triggerSyncCheck(), 500); // 0.5s
+                    setTimeout(() => this.triggerSyncCheck(), 1000); // 1s
+                    setTimeout(() => this.triggerSyncCheck(), 2000); // 2s
+                } else {
+                    // Single sync check for other devices
+                    setTimeout(() => {
+                        this.triggerSyncCheck();
+                    }, 1000);
+                }
             }
         } catch (error) {
             console.error('addItemDirectly failed', error);
