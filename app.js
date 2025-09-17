@@ -5,6 +5,7 @@ import { renderCard } from './src/ui/renderCard.js';
 import { isProbablyUrl } from './src/utils/url.js';
 import { openSheet, closeSheet } from './src/ui/bottomSheet.js';
 import { EXTRACT_ENDPOINT } from './src/config.js';
+import { hapticButton, hapticSuccess, hapticError, hapticWarning, hapticImportant, hapticSelection } from './src/utils/haptic.js';
 import { withStableBust } from './src/utils/cacheBust.js';
 import { SupabaseDataManager } from './src/data/supabaseData.js';
 
@@ -270,10 +271,12 @@ export function setupEmailOtpHandlers() {
   // Email → send OTP
   btnEmailContinue.addEventListener('click', async () => {
     console.log('Email continue button clicked');
+    hapticButton();
     const email = (authEmail.value || '').trim();
     authMsg.textContent = '';
     
     if (!email) {
+      hapticError();
       authMsg.textContent = 'Please enter a valid email.';
       return;
     }
@@ -287,6 +290,7 @@ export function setupEmailOtpHandlers() {
       await supabase.auth.signOut();
       
       await sendEmailOtp(email);
+      hapticSuccess();
       pendingEmail = email;
       otpEmailLabel.textContent = email;
       
@@ -331,8 +335,12 @@ export function setupEmailOtpHandlers() {
     });
   });
 
-  btnOtpVerify.addEventListener('click', verifyOtpAndLogin);
+  btnOtpVerify.addEventListener('click', () => {
+    hapticButton();
+    verifyOtpAndLogin();
+  });
   btnOtpBack.addEventListener('click', () => {
+    hapticButton();
     otpMain.style.display = 'none';
     authMain.style.display = '';
   });
@@ -378,10 +386,12 @@ export function setupEmailOtpHandlers() {
   if (btnGoogle) {
     btnGoogle.addEventListener('click', async () => {
       try {
+        hapticButton();
         btnGoogle.disabled = true;
         await signInWithGoogle();
       } catch (e) {
         console.error('Google sign-in error:', e);
+        hapticError();
         authMsg.textContent = e?.message || String(e);
       } finally {
         btnGoogle.disabled = false;
@@ -407,9 +417,11 @@ async function verifyOtpAndLogin() {
     console.log('Verifying OTP for email:', pendingEmail);
     const user = await verifyEmailOtp({ email: pendingEmail, code });
     console.log('OTP verified, user:', user);
+    hapticSuccess();
     showAppForUser(user);
   } catch (e) {
     console.error('OTP verification error:', e);
+    hapticError();
     otpMsg.textContent = e?.message || String(e);
   } finally {
     btnOtpVerify.disabled = false;
@@ -650,7 +662,7 @@ async function showAppForUser(user) {
       console.log('Real-time sync disabled by user preference');
       updateSyncStatus?.('DISABLED');
     } else {
-      window.__unsubItems = await subscribeItems(
+    window.__unsubItems = await subscribeItems(
       async (row) => {
         console.log('Real-time item added:', row);
         try {
@@ -853,8 +865,8 @@ function openAccountSheet(user) {
                     logoutBtn.disabled = true;
                     logoutBtn.innerHTML = '<span class="icon">⏳</span><span>Logging out...</span>';
                     
-                    await logout();
-                    closeSheet();
+                await logout();
+                closeSheet();
                 } catch (error) {
                     console.error('Logout failed:', error);
                     // Force reload on error
@@ -888,8 +900,8 @@ function openAccountPopover(anchorEl, user) {
             btn.disabled = true;
             btn.textContent = 'Logging out...';
             
-            await logout();
-            closeAccountPopover();
+        await logout();
+        closeAccountPopover();
         } catch (error) {
             console.error('Logout failed:', error);
             // Force reload on error
@@ -1086,10 +1098,16 @@ export class WantApp {
         if (!headerSettingsBtn) console.warn('settingsBtn not found');
 
         openAddBtn?.removeEventListener('click', () => this.showAddSheet());
-        openAddBtn?.addEventListener('click', () => this.showAddSheet(), { passive: true });
+        openAddBtn?.addEventListener('click', () => {
+            hapticButton();
+            this.showAddSheet();
+        }, { passive: true });
 
         headerSettingsBtn?.removeEventListener('click', () => this.showSettingsSheet());
-        headerSettingsBtn?.addEventListener('click', () => this.showSettingsSheet(), { passive: true });
+        headerSettingsBtn?.addEventListener('click', () => {
+            hapticButton();
+            this.showSettingsSheet();
+        }, { passive: true });
 
         // Swipe to close is handled by the bottom sheet component
 
@@ -1270,16 +1288,20 @@ export class WantApp {
             const raw = urlInput.value.trim();
             const url = this.normalizeUrl(raw);
             if (!isProbablyUrl(url)) { 
+                hapticError();
                 alert('Paste a valid URL'); 
                 return; 
             }
 
+            hapticButton();
             addBtn.disabled = true;
             try {
                 await this.addItemDirectly(url);
+                hapticSuccess();
                 this.hideAddSheet();
             } catch (error) {
                 console.error('Failed to add item:', error);
+                hapticError();
                 alert('Failed to add item. Please try again.');
             } finally {
                 addBtn.disabled = false;
@@ -1323,12 +1345,14 @@ export class WantApp {
 
         if (exportBtn) {
             exportBtn.addEventListener('click', () => {
+                hapticButton();
                 this.exportData();
             });
         }
 
         if (importBtn) {
             importBtn.addEventListener('click', () => {
+                hapticButton();
                 if (importFile) importFile.click();
             });
         }
@@ -1341,15 +1365,18 @@ export class WantApp {
 
         if (syncBtn) {
             syncBtn.addEventListener('click', async () => {
+                hapticButton();
                 syncBtn.disabled = true;
                 syncBtn.textContent = 'Syncing...';
                 try {
                     // Force fresh data fetch
                     this.dataManager.clearCache();
                     await this.loadItems();
+                    hapticSuccess();
                     this.showToast('Data refreshed from server');
                 } catch (error) {
                     console.error('Manual sync failed:', error);
+                    hapticError();
                     this.showToast('Sync failed', 'error');
                 } finally {
                     syncBtn.disabled = false;
@@ -1769,6 +1796,7 @@ export class WantApp {
         // Events (delegate)
         el.querySelectorAll('.tag-chip').forEach(btn => {
             btn.addEventListener('click', () => {
+                hapticSelection();
                 const store = btn.dataset.store || null;
                 console.log('Tag clicked:', { store, currentItems: this.items?.length });
                 
@@ -1946,6 +1974,7 @@ export class WantApp {
             // Re-render the grid with updated items
             this.renderItems(this.items);
             this.updateStats();
+            hapticSuccess();
             this.showToast('Item deleted', 'success');
             
             // Trigger a single sync check after delete
@@ -1954,6 +1983,7 @@ export class WantApp {
             }, 1000);
         } catch (error) {
             console.error('Error deleting item:', error);
+            hapticError();
             this.showToast('Error deleting item', 'error');
         }
     }
@@ -2696,10 +2726,12 @@ export class WantApp {
         const grid = document.getElementById('grid');
         if (!grid) return;
 
+        // Handle delete button clicks
         grid.addEventListener('click', (e) => {
             const btn = e.target.closest('[data-action="delete"]');
             if (!btn) return;
 
+            hapticButton();
             e.preventDefault();
             e.stopPropagation();
 
@@ -2710,6 +2742,15 @@ export class WantApp {
             if (!confirm('Delete this item?')) return;
 
             this.deleteItem(id);
+        });
+
+        // Handle card link clicks (for haptic feedback)
+        grid.addEventListener('click', (e) => {
+            const cardLink = e.target.closest('.card-link');
+            if (!cardLink) return;
+
+            // Don't interfere with the link behavior, just add haptic feedback
+            hapticButton();
         });
     }
 
