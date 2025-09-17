@@ -31,7 +31,7 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
         
-               <link rel="stylesheet" href="styles.css?v=1.0.3">
+               <link rel="stylesheet" href="styles.css?v=1.0.5">
     <script>
         // Supabase environment variables
         window.__ENV = {
@@ -98,7 +98,7 @@
         <div class="topbar-inner">
             <div class="header-left">
                 <img src="assets/want.svg" alt="Want" class="logo" />
-                <span class="version-badge" id="version-badge">v1.0.4</span>
+                <span class="version-badge" id="version-badge">v1.0.5</span>
             </div>
             <div class="header-actions">
                 <button id="settingsBtn" class="settings-btn" title="Settings">
@@ -240,7 +240,7 @@
     <script type="module">
         // Smart cache busting - only when needed
         const needsCacheBusting = sessionStorage.getItem('force-cache-refresh') === 'true';
-        const appVersion = '1.0.4'; // Update this when you need to force refresh
+        const appVersion = '1.0.5'; // Update this when you need to force refresh
         
         let importUrl = './app.js';
         if (needsCacheBusting) {
