@@ -139,25 +139,68 @@ export async function authInit() {
     }
   }
 
+  // Track current auth state to prevent duplicate calls
+  let currentUser = null;
+  let isInitializing = false;
+
   // Listen to auth state changes
-  const unsub = supabase.auth.onAuthStateChange((event, session) => {
+  const unsub = supabase.auth.onAuthStateChange(async (event, session) => {
     console.log('Auth state change:', { event, session: !!session, user: !!session?.user });
-    if (session?.user) {
-      showAppForUser(session.user);
-    } else {
+    
+    // Prevent duplicate initialization
+    if (isInitializing) {
+      console.log('Already initializing, skipping auth state change');
+      return;
+    }
+    
+    const newUser = session?.user;
+    const userChanged = currentUser?.id !== newUser?.id;
+    
+    if (newUser && userChanged) {
+      console.log('User logged in or changed:', newUser.id);
+      currentUser = newUser;
+      isInitializing = true;
+      
+      try {
+        await showAppForUser(newUser);
+      } catch (error) {
+        console.error('Failed to show app for user:', error);
+        // Fallback: reload page
+        window.location.reload();
+      } finally {
+        isInitializing = false;
+      }
+    } else if (!newUser && currentUser) {
+      console.log('User logged out');
+      currentUser = null;
       showLoginScreen();
     }
+    
     hideInitialLoader();
     renderOnceStable();
   });
 
+  // Initial session check
   const { data: { session } } = await supabase.auth.getSession();
   console.log('Initial session check:', { session: !!session, user: !!session?.user });
+  
   if (session?.user) {
-    showAppForUser(session.user);
+    currentUser = session.user;
+    isInitializing = true;
+    
+    try {
+      await showAppForUser(session.user);
+    } catch (error) {
+      console.error('Failed to show app for user on initial load:', error);
+      // Fallback: show login screen
+      showLoginScreen();
+    } finally {
+      isInitializing = false;
+    }
   } else {
     showLoginScreen();
   }
+  
   hideInitialLoader();
 }
 
@@ -558,6 +601,10 @@ async function showAppForUser(user) {
     const wantApp = await waitForWantApp();
     console.log('WantApp instance ready, loading items...');
     
+    // Clear any previous data to ensure fresh start
+    wantApp.items = [];
+    wantApp.dataManager.clearCache();
+    
     const items = await wantApp.dataManager.getItems(); // Load from Supabase
     console.log('Loaded items from Supabase:', items.length);
     
@@ -565,15 +612,30 @@ async function showAppForUser(user) {
     wantApp.items = items; // Store items in the instance
     wantApp.renderItems(items);
     console.log('Items rendered successfully');
+    
+    // Force UI update to ensure items are visible
+    setTimeout(() => {
+      if (wantApp.items.length > 0) {
+        wantApp.renderItems(wantApp.items);
+        console.log('📱 Forced UI re-render for mobile Safari');
+      }
+    }, 1000);
+    
   } catch (error) {
     console.error('Failed to load items:', error);
-    // Show empty state or retry mechanism
-    setTimeout(() => {
-      console.log('Retrying app initialization...');
-      if (window.wantApp) {
-        window.wantApp.loadItems();
-      }
-    }, 2000);
+    
+    // Multiple retry attempts with increasing delays
+    const retryAttempts = [2000, 5000, 10000]; // 2s, 5s, 10s
+    
+    retryAttempts.forEach((delay, index) => {
+      setTimeout(() => {
+        console.log(`Retry attempt ${index + 1} - app initialization...`);
+        if (window.wantApp) {
+          window.wantApp.dataManager.clearCache();
+          window.wantApp.loadItems();
+        }
+      }, delay);
+    });
   }
 
   // 2) Realtime sync with error handling
@@ -787,8 +849,17 @@ function openAccountSheet(user) {
         const logoutBtn = document.getElementById('btn-logout');
         if (logoutBtn) {
             logoutBtn.onclick = async () => {
-                await logout();
-                closeSheet();
+                try {
+                    logoutBtn.disabled = true;
+                    logoutBtn.innerHTML = '<span class="icon">⏳</span><span>Logging out...</span>';
+                    
+                    await logout();
+                    closeSheet();
+                } catch (error) {
+                    console.error('Logout failed:', error);
+                    // Force reload on error
+                    window.location.reload();
+                }
             };
         }
     }, 100);
@@ -812,8 +883,18 @@ function openAccountPopover(anchorEl, user) {
     document.body.appendChild(pop);
     positionPopoverBelow(pop, anchorEl);
     document.getElementById('acc-logout-pop').onclick = async () => {
-        await logout();
-        closeAccountPopover();
+        try {
+            const btn = document.getElementById('acc-logout-pop');
+            btn.disabled = true;
+            btn.textContent = 'Logging out...';
+            
+            await logout();
+            closeAccountPopover();
+        } catch (error) {
+            console.error('Logout failed:', error);
+            // Force reload on error
+            window.location.reload();
+        }
     };
     const onDocClick = (e) => { if (!pop.contains(e.target) && e.target !== anchorEl) closeAccountPopover(); };
     const onKey = (e) => { if (e.key === 'Escape') closeAccountPopover(); };

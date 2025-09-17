@@ -16,11 +16,42 @@ export class SupabaseDataManager {
       
       if (userError) {
         console.error('❌ Authentication error:', userError);
-        // Try to refresh session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError || !session) {
-          console.error('❌ Session refresh failed, user needs to re-login');
-          // Trigger re-authentication
+        
+        // Check if it's a session timeout or invalid token
+        if (userError.message?.includes('JWT') || userError.message?.includes('invalid') || userError.message?.includes('expired')) {
+          console.log('🔄 Attempting session refresh...');
+          
+          try {
+            const { error: refreshError } = await supabase.auth.refreshSession();
+            if (refreshError) {
+              console.error('❌ Session refresh failed:', refreshError);
+              // Clear auth state and force re-login
+              await supabase.auth.signOut();
+              window.location.reload();
+              return [];
+            }
+            
+            // Retry getting user after refresh
+            const { data: { user: refreshedUser }, error: retryError } = await supabase.auth.getUser();
+            if (retryError || !refreshedUser) {
+              console.error('❌ Still no user after refresh, forcing re-login');
+              await supabase.auth.signOut();
+              window.location.reload();
+              return [];
+            }
+            
+            console.log('✅ Session refreshed successfully');
+            // Continue with refreshed user
+            
+          } catch (refreshError) {
+            console.error('❌ Session refresh exception:', refreshError);
+            await supabase.auth.signOut();
+            window.location.reload();
+            return [];
+          }
+        } else {
+          // Other auth errors - force re-login
+          await supabase.auth.signOut();
           window.location.reload();
           return [];
         }

@@ -48,8 +48,28 @@ export async function getCurrentUser() {
 }
 
 export async function logout() {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    try {
+        console.log('🚪 Logging out...');
+        
+        // Sign out from Supabase
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+            console.error('Logout error:', error);
+            // Don't throw error, continue with cleanup
+        }
+        
+        // Clear all authentication state
+        await clearAuthState();
+        
+        // Force page reload to reset app state
+        console.log('🔄 Reloading page to reset app state...');
+        window.location.reload();
+        
+    } catch (error) {
+        console.error('Logout failed:', error);
+        // Force reload anyway to clear state
+        window.location.reload();
+    }
 }
 
 // Clear all authentication state and cache
