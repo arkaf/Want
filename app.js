@@ -1969,31 +1969,72 @@ export class WantApp {
 
     async deleteItem(id) {
         try {
-            console.log('Deleting item:', id);
+            console.log('🗑️ Deleting item:', id);
             console.log('Items before delete:', this.items.length);
             
-            // Delete from Supabase
+            // Ensure we have the item locally before attempting delete
+            const itemToDelete = this.items.find(item => item.id === id);
+            if (!itemToDelete) {
+                console.error('Item not found in local array:', id);
+                this.showToast('Item not found', 'error');
+                return;
+            }
+            
+            // Delete from Supabase first
             await this.dataManager.deleteItem(id);
+            console.log('✅ Item deleted from Supabase');
             
             // Update local items array
+            const previousCount = this.items.length;
             this.items = this.items.filter(item => item.id !== id);
+            const newCount = this.items.length;
             
-            console.log('Items after delete:', this.items.length);
+            console.log(`Items count: ${previousCount} → ${newCount}`);
+            
+            // Force re-render with explicit state management
+            if (this.items.length === 0) {
+                console.log('📱 No items left, showing empty state');
+                // Clear grid first
+                const grid = document.getElementById('grid');
+                if (grid) {
+                    grid.innerHTML = '';
+                }
+            }
             
             // Re-render the grid with updated items
             this.renderItems(this.items);
             this.updateStats();
+            
+            // Success feedback
             hapticSuccess();
             this.showToast('Item deleted', 'success');
             
-            // Trigger a single sync check after delete
-            setTimeout(() => {
-                this.triggerSyncCheck();
-            }, 1000);
+            // For mobile Safari, add extra sync check with delay
+            const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+            if (isMobileSafari) {
+                console.log('📱 Mobile Safari: Additional sync checks after delete');
+                setTimeout(() => {
+                    this.triggerSyncCheck();
+                }, 500);
+                setTimeout(() => {
+                    this.triggerSyncCheck();
+                }, 2000);
+            } else {
+                setTimeout(() => {
+                    this.triggerSyncCheck();
+                }, 1000);
+            }
+            
         } catch (error) {
-            console.error('Error deleting item:', error);
+            console.error('❌ Error deleting item:', error);
             hapticError();
             this.showToast('Error deleting item', 'error');
+            
+            // On error, try to refresh the items to ensure UI consistency
+            setTimeout(() => {
+                console.log('🔄 Refreshing items after delete error');
+                this.loadItems();
+            }, 1000);
         }
     }
 
@@ -2654,23 +2695,27 @@ export class WantApp {
                 }
 
                 if (action === 'share') {
+                    hapticButton();
                     try {
                         if (navigator.share) {
                             await navigator.share({ 
                                 title: item.title || item.domain, 
                                 url: item.url 
                             });
+                            hapticSuccess();
                         } else {
                             await navigator.clipboard.writeText(item.url);
+                            hapticSuccess();
                             this.showToast('Link copied', 'info');
                         }
                     } catch(error) { 
                         console.log('Share cancelled or failed:', error);
-                        // Don't show error for user cancellation
+                        // Don't show error for user cancellation (user might have just cancelled)
                     }
                 }
 
                 if (action === 'copy') {
+                    hapticButton();
                     const url = item.url;
                     try {
                         if (navigator.clipboard?.writeText) {
@@ -2684,31 +2729,28 @@ export class WantApp {
                             document.execCommand('copy');
                             ta.remove();
                         }
+                        hapticSuccess();
                         this.showToast('Link copied', 'info');
                     } catch (e) {
+                        hapticError();
                         this.showToast('Could not copy link', 'error');
                         console.error('Copy failed', e);
                     }
                 }
 
                 if (action === 'delete') {
+                    // Close menu first to prevent UI issues
+                    closeMoreMenu();
+                    
+                    // Add haptic feedback
+                    hapticButton();
+                    
                     const ok = confirm('Delete this item?');
                     if (ok) {
-                        try {
-                            // Delete from Supabase
-                            await this.dataManager.deleteItem(item.id);
-                            
-                            // Update local items array
-                            this.items = this.items.filter(i => i.id !== item.id);
-                            
-                            // Re-render the grid
-                            this.renderItems(this.items);
-                            this.showToast('Item deleted', 'success');
-                        } catch (error) {
-                            console.error('Failed to delete item:', error);
-                            this.showToast('Failed to delete item', 'error');
-                        }
+                        // Use the main deleteItem method for consistency
+                        await this.deleteItem(item.id);
                     }
+                    return; // Exit early to avoid calling closeMoreMenu again
                 }
             } catch (error) {
                 console.error('Menu action failed:', error);
