@@ -707,26 +707,33 @@ async function showAppForUser(user) {
     if (window.wantApp) {
       window.wantApp.startPeriodicSync();
       
-      // Start session refresh interval for mobile Safari
+      // Start session refresh interval for mobile Safari (less aggressive)
       const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
       if (isMobileSafari) {
-        console.log('📱 Starting session refresh interval for mobile Safari');
+        console.log('📱 Starting session monitoring for mobile Safari');
         setInterval(async () => {
           try {
             const { data: { session }, error } = await supabase.auth.getSession();
-            if (error || !session) {
-              console.log('📱 Session expired, refreshing...');
-              const { error: refreshError } = await supabase.auth.refreshSession();
-              if (refreshError) {
-                console.error('📱 Session refresh failed:', refreshError);
-                // Force re-login
+            if (error) {
+              console.warn('📱 Session check error (not critical):', error);
+              // Don't force reload on session check errors - they might be temporary
+            } else if (!session) {
+              console.log('📱 No session found - user might have logged out elsewhere');
+              // Only reload if we're sure the user should be logged out
+              // Check if we can get user data first
+              const { data: { user }, error: userError } = await supabase.auth.getUser();
+              if (!user && !userError) {
+                console.log('📱 Confirmed: user logged out, redirecting to login');
                 window.location.reload();
               }
+            } else {
+              console.log('📱 Session check: OK');
             }
           } catch (error) {
-            console.error('📱 Session check failed:', error);
+            console.warn('📱 Session monitoring error (non-critical):', error);
+            // Don't force reload on monitoring errors
           }
-        }, 30000); // Check every 30 seconds
+        }, 60000); // Check every 60 seconds (less frequent)
       }
       
       // Trigger initial sync check after app loads
@@ -1025,17 +1032,29 @@ export class WantApp {
         // Only clear problematic caches, not all caches
         this.clearDataCaches();
         
-        // Add empty state fallback for mobile Safari
+        // Add empty state fallback for mobile Safari (less aggressive)
         const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
         if (isMobileSafari) {
-            // Check for empty state after 10 seconds and retry loading
-            setTimeout(() => {
+            // Only retry if app seems stuck (check if user is still authenticated first)
+            setTimeout(async () => {
                 if (this.items.length === 0) {
-                    console.log('📱 Empty state detected on mobile Safari, retrying data load...');
-                    this.clearDataCaches();
-                    this.loadItems();
+                    console.log('📱 Checking if empty state is legitimate...');
+                    
+                    // Check if user is still authenticated before retrying
+                    try {
+                        const { data: { user }, error } = await supabase.auth.getUser();
+                        if (user && !error) {
+                            console.log('📱 User still authenticated, retrying data load...');
+                            this.clearDataCaches();
+                            this.loadItems();
+                        } else {
+                            console.log('📱 User not authenticated, empty state is expected');
+                        }
+                    } catch (authError) {
+                        console.log('📱 Auth check failed, not retrying:', authError);
+                    }
                 }
-            }, 10000);
+            }, 15000); // Increased to 15 seconds
         }
         
         // Wait for DOM to be ready before initializing

@@ -19,24 +19,21 @@ export class SupabaseDataManager {
         
         // Check if it's a session timeout or invalid token
         if (userError.message?.includes('JWT') || userError.message?.includes('invalid') || userError.message?.includes('expired')) {
-          console.log('🔄 Attempting session refresh...');
+          console.log('🔄 Session might be expired, attempting refresh...');
           
           try {
             const { error: refreshError } = await supabase.auth.refreshSession();
             if (refreshError) {
-              console.error('❌ Session refresh failed:', refreshError);
-              // Clear auth state and force re-login
-              await supabase.auth.signOut();
-              window.location.reload();
+              console.warn('❌ Session refresh failed, returning empty items:', refreshError);
+              // Don't force reload immediately - let the auth state handler deal with it
               return [];
             }
             
             // Retry getting user after refresh
             const { data: { user: refreshedUser }, error: retryError } = await supabase.auth.getUser();
             if (retryError || !refreshedUser) {
-              console.error('❌ Still no user after refresh, forcing re-login');
-              await supabase.auth.signOut();
-              window.location.reload();
+              console.warn('❌ Still no user after refresh, returning empty items');
+              // Don't force reload - let auth state change handle logout
               return [];
             }
             
@@ -44,15 +41,13 @@ export class SupabaseDataManager {
             // Continue with refreshed user
             
           } catch (refreshError) {
-            console.error('❌ Session refresh exception:', refreshError);
-            await supabase.auth.signOut();
-            window.location.reload();
+            console.warn('❌ Session refresh exception, returning empty items:', refreshError);
+            // Don't force reload - let the app handle it gracefully
             return [];
           }
         } else {
-          // Other auth errors - force re-login
-          await supabase.auth.signOut();
-          window.location.reload();
+          // Other auth errors - return empty items, don't force reload
+          console.warn('❌ Auth error, returning empty items:', userError);
           return [];
         }
       }
