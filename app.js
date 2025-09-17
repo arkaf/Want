@@ -8,6 +8,7 @@ import { EXTRACT_ENDPOINT } from './src/config.js';
 import { hapticButton, hapticSuccess, hapticError, hapticWarning, hapticImportant, hapticSelection } from './src/utils/haptic.js';
 import { withStableBust } from './src/utils/cacheBust.js';
 import { SupabaseDataManager } from './src/data/supabaseData.js';
+import { getVersionString, getBuildInfo } from './version.js';
 
 // Import Supabase auth and items API
 import { supabase } from './supabaseClient.js';
@@ -1045,6 +1046,9 @@ export class WantApp {
         } else {
             this.init();
         }
+        
+        // Update version display
+        this.updateVersionDisplay();
     }
 
     async init() {
@@ -1260,7 +1264,8 @@ export class WantApp {
                 <div class="settings-section">
                     <h3>About</h3>
                     <p>Want - Your personal wishlist</p>
-                    <p>Version 1.0.0</p>
+                    <p>Version ${getVersionString()}</p>
+                    <p>Build: ${getBuildInfo()}</p>
                     <p>Made in London by JAG Studio Ltd</p>
                 </div>
             </div>
@@ -3140,6 +3145,20 @@ export class WantApp {
             console.log('✅ Data caches cleared (static assets preserved)');
         } catch (error) {
             console.warn('Data cache clearing failed:', error);
+        }
+    }
+
+    // Update version display in the UI
+    updateVersionDisplay() {
+        try {
+            const versionBadge = document.getElementById('version-badge');
+            if (versionBadge) {
+                versionBadge.textContent = getVersionString();
+                versionBadge.title = getBuildInfo();
+                console.log('Version display updated:', getVersionString());
+            }
+        } catch (error) {
+            console.warn('Failed to update version display:', error);
         }
     }
 
