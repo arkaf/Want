@@ -14,6 +14,18 @@ export class SupabaseDataManager {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       console.log('👤 User auth result:', { user: user?.id, error: userError });
       
+      if (userError) {
+        console.error('❌ Authentication error:', userError);
+        // Try to refresh session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session) {
+          console.error('❌ Session refresh failed, user needs to re-login');
+          // Trigger re-authentication
+          window.location.reload();
+          return [];
+        }
+      }
+      
       if (!user) {
         console.log('❌ No user authenticated, returning empty items');
         return [];

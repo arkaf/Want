@@ -536,21 +536,44 @@ async function showAppForUser(user) {
     });
   });
 
-  // 1) Load initial items and sync between Supabase and IndexedDB
+  // 1) Load initial items - wait for WantApp to be ready
+  const waitForWantApp = async () => {
+    let attempts = 0;
+    const maxAttempts = 50; // 5 seconds max wait
+    
+    while (!window.wantApp && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+    }
+    
+    if (!window.wantApp) {
+      throw new Error('WantApp instance not available after waiting');
+    }
+    
+    return window.wantApp;
+  };
+  
   try {
-    const items = await window.wantApp.dataManager.getItems(); // Load from Supabase
+    console.log('Waiting for WantApp instance...');
+    const wantApp = await waitForWantApp();
+    console.log('WantApp instance ready, loading items...');
+    
+    const items = await wantApp.dataManager.getItems(); // Load from Supabase
     console.log('Loaded items from Supabase:', items.length);
     
-        // Items are now stored only in Supabase - no local sync needed
-    
-    if (window.wantApp && window.wantApp.renderItems) {
-      window.wantApp.items = items; // Store items in the instance
-      window.wantApp.renderItems(items);
-    } else {
-      console.warn('WantApp instance not ready yet');
-    }
+    // Items are now stored only in Supabase - no local sync needed
+    wantApp.items = items; // Store items in the instance
+    wantApp.renderItems(items);
+    console.log('Items rendered successfully');
   } catch (error) {
     console.error('Failed to load items:', error);
+    // Show empty state or retry mechanism
+    setTimeout(() => {
+      console.log('Retrying app initialization...');
+      if (window.wantApp) {
+        window.wantApp.loadItems();
+      }
+    }, 2000);
   }
 
   // 2) Realtime sync with error handling
@@ -608,6 +631,28 @@ async function showAppForUser(user) {
     // Start periodic sync as fallback
     if (window.wantApp) {
       window.wantApp.startPeriodicSync();
+      
+      // Start session refresh interval for mobile Safari
+      const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+      if (isMobileSafari) {
+        console.log('📱 Starting session refresh interval for mobile Safari');
+        setInterval(async () => {
+          try {
+            const { data: { session }, error } = await supabase.auth.getSession();
+            if (error || !session) {
+              console.log('📱 Session expired, refreshing...');
+              const { error: refreshError } = await supabase.auth.refreshSession();
+              if (refreshError) {
+                console.error('📱 Session refresh failed:', refreshError);
+                // Force re-login
+                window.location.reload();
+              }
+            }
+          } catch (error) {
+            console.error('📱 Session check failed:', error);
+          }
+        }, 30000); // Check every 30 seconds
+      }
       
       // Trigger initial sync check after app loads
       setTimeout(() => {
@@ -882,6 +927,18 @@ export class WantApp {
         this.lastSyncTime = Date.now();
         this.syncInterval = null; // For periodic sync fallback
         this.syncCount = 0; // Debug counter
+        
+        // Add empty state fallback for mobile Safari
+        const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
+        if (isMobileSafari) {
+            // Check for empty state after 10 seconds and retry loading
+            setTimeout(() => {
+                if (this.items.length === 0) {
+                    console.log('📱 Empty state detected on mobile Safari, retrying data load...');
+                    this.loadItems();
+                }
+            }, 10000);
+        }
         
         // Wait for DOM to be ready before initializing
         if (document.readyState === 'loading') {
