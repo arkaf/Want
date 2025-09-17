@@ -48,28 +48,51 @@ export async function getCurrentUser() {
 }
 
 export async function logout() {
-    try {
-        console.log('🚪 Logging out...');
-        
-        // Sign out from Supabase
-        const { error } = await supabase.auth.signOut();
-        if (error) {
-            console.error('Logout error:', error);
-            // Don't throw error, continue with cleanup
+    console.log('🚪 Instant logout initiated...');
+    
+    // Immediately clear UI state
+    const authScreen = document.getElementById('auth-screen');
+    const topbar = document.getElementById('topbar');
+    const appMain = document.getElementById('appMain');
+    
+    if (authScreen) authScreen.style.display = 'block';
+    if (topbar) topbar.style.display = 'none';
+    if (appMain) appMain.style.display = 'none';
+    
+    // Clear app instance immediately
+    if (window.wantApp) {
+        if (window.wantApp.syncInterval) {
+            clearInterval(window.wantApp.syncInterval);
         }
-        
-        // Clear all authentication state
-        await clearAuthState();
-        
-        // Force page reload to reset app state
-        console.log('🔄 Reloading page to reset app state...');
-        window.location.reload();
-        
-    } catch (error) {
-        console.error('Logout failed:', error);
-        // Force reload anyway to clear state
-        window.location.reload();
+        window.wantApp = null;
     }
+    
+    // Clear real-time subscriptions
+    if (window.__unsubItems) {
+        try {
+            window.__unsubItems();
+        } catch (e) {
+            console.warn('Error unsubscribing:', e);
+        }
+        window.__unsubItems = null;
+    }
+    
+    // Clear all storage immediately (don't wait for async operations)
+    try {
+        localStorage.clear();
+        sessionStorage.clear();
+    } catch (e) {
+        console.warn('Storage clear error:', e);
+    }
+    
+    // Sign out from Supabase in background (don't wait for it)
+    supabase.auth.signOut().catch(error => {
+        console.warn('Background logout error (non-critical):', error);
+    });
+    
+    // Force immediate page reload
+    console.log('🔄 Instant reload...');
+    window.location.href = window.location.origin + window.location.pathname;
 }
 
 // Clear all authentication state and cache

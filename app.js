@@ -868,18 +868,12 @@ function openAccountSheet(user) {
     setTimeout(() => {
         const logoutBtn = document.getElementById('btn-logout');
         if (logoutBtn) {
-            logoutBtn.onclick = async () => {
-                try {
-                    logoutBtn.disabled = true;
-                    logoutBtn.innerHTML = '<span class="icon">⏳</span><span>Logging out...</span>';
-                    
-                await logout();
-                closeSheet();
-                } catch (error) {
-                    console.error('Logout failed:', error);
-                    // Force reload on error
-                    window.location.reload();
-                }
+            logoutBtn.onclick = () => {
+                logoutBtn.disabled = true;
+                logoutBtn.innerHTML = '<span class="icon">⏳</span><span>Logging out...</span>';
+                
+                // Instant logout (no await needed)
+                logout();
             };
         }
     }, 100);
@@ -902,19 +896,13 @@ function openAccountPopover(anchorEl, user) {
     `;
     document.body.appendChild(pop);
     positionPopoverBelow(pop, anchorEl);
-    document.getElementById('acc-logout-pop').onclick = async () => {
-        try {
-            const btn = document.getElementById('acc-logout-pop');
-            btn.disabled = true;
-            btn.textContent = 'Logging out...';
-            
-        await logout();
-        closeAccountPopover();
-        } catch (error) {
-            console.error('Logout failed:', error);
-            // Force reload on error
-            window.location.reload();
-        }
+    document.getElementById('acc-logout-pop').onclick = () => {
+        const btn = document.getElementById('acc-logout-pop');
+        btn.disabled = true;
+        btn.textContent = 'Logging out...';
+        
+        // Instant logout (no await needed)
+        logout();
     };
     const onDocClick = (e) => { if (!pop.contains(e.target) && e.target !== anchorEl) closeAccountPopover(); };
     const onKey = (e) => { if (e.key === 'Escape') closeAccountPopover(); };
