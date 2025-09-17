@@ -1,5 +1,5 @@
 // Service Worker for Want PWA
-const CACHE_NAME = 'want-v75';
+const CACHE_NAME = 'want-v76-' + Date.now(); // Dynamic cache name to force refresh
 const urlsToCache = [
     '/',
     '/index.html',
@@ -58,25 +58,36 @@ self.addEventListener('fetch', event => {
     
     event.respondWith((async () => {
         try {
-            // Check for cache-busting parameter
             const url = new URL(event.request.url);
-            if (url.searchParams.has('cb')) {
-                // Force fresh fetch for cache-busting
+            
+            // Always fetch fresh for app files to avoid cache issues
+            const isAppFile = url.pathname.endsWith('.js') || 
+                             url.pathname.endsWith('.css') || 
+                             url.pathname.endsWith('.html') ||
+                             url.searchParams.has('v') || 
+                             url.searchParams.has('cb');
+            
+            if (isAppFile) {
+                console.log('SW: Fetching fresh for app file:', url.pathname);
                 return await fetch(event.request, { cache: 'no-store' });
             }
             
-            // Cache-first strategy for static assets
-            const cache = await caches.open(CACHE_NAME);
-            const cached = await cache.match(event.request);
-            if (cached) return cached;
-            
-            const fresh = await fetch(event.request);
-            // Only cache GET requests with supported schemes
-            if (event.request.method === 'GET' && event.request.url.startsWith('http')) {
-                cache.put(event.request, fresh.clone());
+            // Network-first strategy for everything else
+            try {
+                const fresh = await fetch(event.request, { cache: 'no-store' });
+                return fresh;
+            } catch (networkError) {
+                // Fallback to cache only if network fails
+                const cache = await caches.open(CACHE_NAME);
+                const cached = await cache.match(event.request);
+                if (cached) {
+                    console.log('SW: Using cached fallback for:', url.pathname);
+                    return cached;
+                }
+                throw networkError;
             }
-            return fresh;
         } catch (e) {
+            console.error('SW: Request failed:', e);
             // Return offline page for navigation requests
             if (event.request.mode === 'navigate') {
                 const offlinePage = await caches.match('/index.html');

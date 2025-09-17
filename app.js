@@ -1021,6 +1021,9 @@ export class WantApp {
         this.syncInterval = null; // For periodic sync fallback
         this.syncCount = 0; // Debug counter
         
+        // Clear browser cache on initialization to prevent stale data
+        this.clearBrowserCache();
+        
         // Add empty state fallback for mobile Safari
         const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
         if (isMobileSafari) {
@@ -1028,6 +1031,7 @@ export class WantApp {
             setTimeout(() => {
                 if (this.items.length === 0) {
                     console.log('📱 Empty state detected on mobile Safari, retrying data load...');
+                    this.clearBrowserCache();
                     this.loadItems();
                 }
             }, 10000);
@@ -3093,6 +3097,60 @@ export class WantApp {
         // This method is called but there's no stats display in the current UI
         // It's safe to leave it empty or add stats functionality later
         console.log('Stats updated - items count:', this.items.length);
+    }
+
+    // Clear browser cache to prevent stale data issues
+    clearBrowserCache() {
+        try {
+            console.log('🧹 Clearing browser cache...');
+            
+            // Clear HTTP cache if available
+            if ('caches' in window) {
+                caches.keys().then(cacheNames => {
+                    cacheNames.forEach(cacheName => {
+                        if (cacheName.includes('want')) {
+                            console.log('Deleting cache:', cacheName);
+                            caches.delete(cacheName);
+                        }
+                    });
+                });
+            }
+            
+            // Clear Supabase data manager cache
+            if (this.dataManager && this.dataManager.clearCache) {
+                this.dataManager.clearCache();
+            }
+            
+            // Clear localStorage items that might cause issues (but keep auth)
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && (key.includes('want') || key.includes('cache')) && !key.includes('auth') && !key.includes('supabase')) {
+                    keysToRemove.push(key);
+                }
+            }
+            keysToRemove.forEach(key => {
+                console.log('Removing localStorage key:', key);
+                localStorage.removeItem(key);
+            });
+            
+            // Clear sessionStorage cache items
+            const sessionKeysToRemove = [];
+            for (let i = 0; i < sessionStorage.length; i++) {
+                const key = sessionStorage.key(i);
+                if (key && key.includes('cache')) {
+                    sessionKeysToRemove.push(key);
+                }
+            }
+            sessionKeysToRemove.forEach(key => {
+                console.log('Removing sessionStorage key:', key);
+                sessionStorage.removeItem(key);
+            });
+            
+            console.log('✅ Browser cache cleared');
+        } catch (error) {
+            console.warn('Cache clearing failed:', error);
+        }
     }
 
 }
