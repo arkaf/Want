@@ -1021,8 +1021,8 @@ export class WantApp {
         this.syncInterval = null; // For periodic sync fallback
         this.syncCount = 0; // Debug counter
         
-        // Clear browser cache on initialization to prevent stale data
-        this.clearBrowserCache();
+        // Only clear problematic caches, not all caches
+        this.clearDataCaches();
         
         // Add empty state fallback for mobile Safari
         const isMobileSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent);
@@ -1031,7 +1031,7 @@ export class WantApp {
             setTimeout(() => {
                 if (this.items.length === 0) {
                     console.log('📱 Empty state detected on mobile Safari, retrying data load...');
-                    this.clearBrowserCache();
+                    this.clearDataCaches();
                     this.loadItems();
                 }
             }, 10000);
@@ -3099,57 +3099,47 @@ export class WantApp {
         console.log('Stats updated - items count:', this.items.length);
     }
 
-    // Clear browser cache to prevent stale data issues
-    clearBrowserCache() {
+    // Clear only data caches, preserve static asset caches for performance
+    clearDataCaches() {
         try {
-            console.log('🧹 Clearing browser cache...');
+            console.log('🧹 Clearing data caches only...');
             
-            // Clear HTTP cache if available
-            if ('caches' in window) {
-                caches.keys().then(cacheNames => {
-                    cacheNames.forEach(cacheName => {
-                        if (cacheName.includes('want')) {
-                            console.log('Deleting cache:', cacheName);
-                            caches.delete(cacheName);
-                        }
-                    });
-                });
-            }
-            
-            // Clear Supabase data manager cache
+            // Clear Supabase data manager cache (this is important for sync)
             if (this.dataManager && this.dataManager.clearCache) {
                 this.dataManager.clearCache();
+                console.log('✅ Supabase data cache cleared');
             }
             
-            // Clear localStorage items that might cause issues (but keep auth)
-            const keysToRemove = [];
+            // Only clear data-specific localStorage items
+            const dataKeysToRemove = [];
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
-                if (key && (key.includes('want') || key.includes('cache')) && !key.includes('auth') && !key.includes('supabase')) {
-                    keysToRemove.push(key);
+                // Only remove data cache items, preserve auth and settings
+                if (key && key.includes('want-data') || key.includes('items-cache')) {
+                    dataKeysToRemove.push(key);
                 }
             }
-            keysToRemove.forEach(key => {
-                console.log('Removing localStorage key:', key);
+            dataKeysToRemove.forEach(key => {
+                console.log('Removing data cache key:', key);
                 localStorage.removeItem(key);
             });
             
-            // Clear sessionStorage cache items
+            // Clear only data-related sessionStorage
             const sessionKeysToRemove = [];
             for (let i = 0; i < sessionStorage.length; i++) {
                 const key = sessionStorage.key(i);
-                if (key && key.includes('cache')) {
+                if (key && (key.includes('items-cache') || key.includes('sync-cache'))) {
                     sessionKeysToRemove.push(key);
                 }
             }
             sessionKeysToRemove.forEach(key => {
-                console.log('Removing sessionStorage key:', key);
+                console.log('Removing session data cache key:', key);
                 sessionStorage.removeItem(key);
             });
             
-            console.log('✅ Browser cache cleared');
+            console.log('✅ Data caches cleared (static assets preserved)');
         } catch (error) {
-            console.warn('Cache clearing failed:', error);
+            console.warn('Data cache clearing failed:', error);
         }
     }
 

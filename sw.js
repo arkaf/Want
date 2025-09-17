@@ -1,5 +1,6 @@
 // Service Worker for Want PWA
-const CACHE_NAME = 'want-v76-' + Date.now(); // Dynamic cache name to force refresh
+const CACHE_NAME = 'want-v77'; // Static cache name for stable caching
+const DATA_CACHE_NAME = 'want-data-v1'; // Separate cache for dynamic data
 const urlsToCache = [
     '/',
     '/index.html',
@@ -60,35 +61,71 @@ self.addEventListener('fetch', event => {
         try {
             const url = new URL(event.request.url);
             
-            // Always fetch fresh for app files to avoid cache issues
+            // Check if this is a static asset that can be cached
+            const isStaticAsset = url.pathname.endsWith('.png') || 
+                                 url.pathname.endsWith('.jpg') || 
+                                 url.pathname.endsWith('.svg') || 
+                                 url.pathname.endsWith('.ico') ||
+                                 url.pathname.startsWith('/assets/');
+            
+            // Check if this is an app file that might need fresh loading
             const isAppFile = url.pathname.endsWith('.js') || 
                              url.pathname.endsWith('.css') || 
-                             url.pathname.endsWith('.html') ||
-                             url.searchParams.has('v') || 
-                             url.searchParams.has('cb');
+                             url.pathname.endsWith('.html');
             
-            if (isAppFile) {
-                console.log('SW: Fetching fresh for app file:', url.pathname);
-                return await fetch(event.request, { cache: 'no-store' });
-            }
-            
-            // Network-first strategy for everything else
-            try {
-                const fresh = await fetch(event.request, { cache: 'no-store' });
-                return fresh;
-            } catch (networkError) {
-                // Fallback to cache only if network fails
+            // Static assets: Cache-first strategy
+            if (isStaticAsset) {
                 const cache = await caches.open(CACHE_NAME);
                 const cached = await cache.match(event.request);
                 if (cached) {
-                    console.log('SW: Using cached fallback for:', url.pathname);
                     return cached;
                 }
+                const fresh = await fetch(event.request);
+                cache.put(event.request, fresh.clone());
+                return fresh;
+            }
+            
+            // App files: Network-first with smart caching
+            if (isAppFile) {
+                // Only bypass cache if explicitly requested with cache-busting params
+                const hasCacheBusting = url.searchParams.has('v') || 
+                                       url.searchParams.has('cb') || 
+                                       url.searchParams.has('r');
+                
+                if (hasCacheBusting) {
+                    console.log('SW: Cache-busting requested for:', url.pathname);
+                    return await fetch(event.request, { cache: 'no-store' });
+                }
+                
+                // Otherwise use network-first with reasonable caching
+                try {
+                    const fresh = await fetch(event.request);
+                    const cache = await caches.open(CACHE_NAME);
+                    cache.put(event.request, fresh.clone());
+                    return fresh;
+                } catch (networkError) {
+                    const cache = await caches.open(CACHE_NAME);
+                    const cached = await cache.match(event.request);
+                    if (cached) {
+                        console.log('SW: Using cached fallback for:', url.pathname);
+                        return cached;
+                    }
+                    throw networkError;
+                }
+            }
+            
+            // Everything else: Network-first
+            try {
+                const fresh = await fetch(event.request);
+                return fresh;
+            } catch (networkError) {
+                const cache = await caches.open(CACHE_NAME);
+                const cached = await cache.match(event.request);
+                if (cached) return cached;
                 throw networkError;
             }
         } catch (e) {
             console.error('SW: Request failed:', e);
-            // Return offline page for navigation requests
             if (event.request.mode === 'navigate') {
                 const offlinePage = await caches.match('/index.html');
                 if (offlinePage) return offlinePage;
@@ -102,7 +139,19 @@ self.addEventListener('fetch', event => {
 self.addEventListener('activate', event => {
     event.waitUntil((async () => {
         const names = await caches.keys();
-        await Promise.all(names.map(n => (n !== CACHE_NAME ? caches.delete(n) : null)));
-        await self.clients.claim(); // NEW: take control now
+        const validCaches = [CACHE_NAME, DATA_CACHE_NAME];
+        
+        await Promise.all(
+            names.map(cacheName => {
+                if (!validCaches.includes(cacheName)) {
+                    console.log('SW: Deleting old cache:', cacheName);
+                    return caches.delete(cacheName);
+                }
+                return null;
+            })
+        );
+        
+        await self.clients.claim();
+        console.log('SW: Cache cleanup completed');
     })());
 });

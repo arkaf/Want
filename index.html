@@ -31,7 +31,7 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
         
-               <link rel="stylesheet" href="styles.css" id="main-styles">
+               <link rel="stylesheet" href="styles.css?v=1.0.0">
     <script>
         // Supabase environment variables
         window.__ENV = {
@@ -237,18 +237,20 @@
 
     <!-- IndexedDB removed - using Supabase only -->
     <script type="module">
-        // Force cache clear and import with aggressive cache busting
-        const timestamp = Date.now();
-        const randomId = Math.random().toString(36).substring(7);
-        const cacheParam = `v=${timestamp}&cb=${randomId}&r=${Math.random()}`;
+        // Smart cache busting - only when needed
+        const needsCacheBusting = sessionStorage.getItem('force-cache-refresh') === 'true';
+        const appVersion = '1.0.0'; // Update this when you need to force refresh
         
-        console.log('Loading app with cache busting:', cacheParam);
-        
-        // Update CSS with cache busting
-        const cssLink = document.getElementById('main-styles');
-        if (cssLink) {
-            cssLink.href = `styles.css?${cacheParam}`;
-            console.log('Updated CSS with cache busting');
+        let importUrl = './app.js';
+        if (needsCacheBusting) {
+            const timestamp = Date.now();
+            importUrl = `./app.js?v=${appVersion}&cb=${timestamp}`;
+            console.log('Loading app with cache busting due to previous failure');
+            // Clear the flag
+            sessionStorage.removeItem('force-cache-refresh');
+        } else {
+            importUrl = `./app.js?v=${appVersion}`;
+            console.log('Loading app with normal caching');
         }
         
         // Clear any existing app instance
@@ -256,79 +258,54 @@
             window.wantApp = null;
         }
         
-        import(`./app.js?${cacheParam}`).then(module => {
+        import(importUrl).then(module => {
             console.log('App module loaded successfully');
             const { WantApp } = module;
             window.wantApp = new WantApp();
+            
+            // Clear any reload attempts on success
+            sessionStorage.removeItem('app-reload-attempted');
         }).catch(error => {
             console.error('Failed to load app module:', error);
-            // Fallback: try to reload the page once
-            if (!sessionStorage.getItem('app-reload-attempted')) {
+            
+            // Only try cache busting if we haven't already
+            if (!needsCacheBusting && !sessionStorage.getItem('app-reload-attempted')) {
                 sessionStorage.setItem('app-reload-attempted', 'true');
-                console.log('Attempting page reload to fix loading issue...');
+                sessionStorage.setItem('force-cache-refresh', 'true');
+                console.log('Attempting reload with cache refresh...');
                 window.location.reload();
             } else {
-                console.error('App loading failed even after reload');
-                document.body.innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Loading Error</h2><p>Please clear your browser cache and try again.</p><button onclick="window.location.reload()">Retry</button></div>';
+                console.error('App loading failed even after cache refresh');
+                document.body.innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Loading Error</h2><p>Unable to load the application. Please try refreshing the page.</p><button onclick="window.location.reload()">Refresh</button></div>';
             }
         });
         
-        // Clear the reload flag on successful load
-        setTimeout(() => {
-            if (window.wantApp) {
-                sessionStorage.removeItem('app-reload-attempted');
-            }
-        }, 5000);
-        
-        // Register service worker with aggressive cache clearing
+        // Register service worker with smart caching
         if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
-            // Clear all caches first
-            if ('caches' in window) {
-                caches.keys().then(cacheNames => {
-                    console.log('Clearing all caches:', cacheNames);
-                    return Promise.all(
-                        cacheNames.map(cacheName => {
-                            console.log('Deleting cache:', cacheName);
-                            return caches.delete(cacheName);
-                        })
-                    );
-                }).then(() => {
-                    console.log('All caches cleared');
-                    // Now register the service worker
-                    return navigator.serviceWorker.register(`sw.js?v=${timestamp}`);
-                }).then(reg => {
-                    console.log('Service Worker registered with cache clearing');
-                    
-                    // Force update if there's a waiting worker
-                    if (reg.waiting) {
-                        console.log('Forcing service worker update');
-                        reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+            navigator.serviceWorker.register('sw.js').then(reg => {
+                console.log('Service Worker registered');
+                
+                // Handle updates gracefully
+                reg.addEventListener('updatefound', () => {
+                    const newWorker = reg.installing;
+                    if (newWorker) {
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                console.log('New service worker available');
+                                // Don't auto-reload, let the user refresh when they want
+                                console.log('Refresh the page to get the latest version');
+                            }
+                        });
                     }
-                    
-                    // Listen for updates
-                    reg.addEventListener('updatefound', () => {
-                        console.log('Service worker update found');
-                        const newWorker = reg.installing;
-                        if (newWorker) {
-                            newWorker.addEventListener('statechange', () => {
-                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                    console.log('New service worker installed, reloading...');
-                                    window.location.reload();
-                                }
-                            });
-                        }
-                    });
-                }).catch(err => {
-                    console.error('Service Worker setup failed:', err);
                 });
-            } else {
-                // Fallback for browsers without cache API
-                navigator.serviceWorker.register(`sw.js?v=${timestamp}`).then(reg => {
-                    console.log('Service Worker registered (no cache API)');
-                }).catch(err => {
-                    console.error('Service Worker registration failed:', err);
-                });
-            }
+                
+                // Check for waiting service worker
+                if (reg.waiting) {
+                    console.log('Service worker update available');
+                }
+            }).catch(err => {
+                console.error('Service Worker registration failed:', err);
+            });
         }
     </script>
 </body>
