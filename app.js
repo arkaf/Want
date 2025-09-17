@@ -109,6 +109,16 @@ function isIOS() {
 
 // Supabase authentication functions
 export async function authInit() {
+  // Add safety timeout to prevent infinite loading
+  const authTimeout = setTimeout(() => {
+    console.error('Auth initialization timeout - forcing fallback');
+    const loader = document.getElementById('initial-loader');
+    if (loader) {
+      loader.style.display = 'none';
+    }
+    showLoginScreen();
+  }, 10000); // 10 second auth timeout
+
   // Debounce auth state updates to prevent login/home bouncing
   let renderQueued = false;
   
@@ -125,19 +135,17 @@ export async function authInit() {
   function hideInitialLoader() {
     const loader = document.getElementById('initial-loader');
     if (loader) {
-      loader.classList.add('hidden');
-      // Remove the loader from DOM after animation
-      setTimeout(() => {
-        if (loader.parentNode) {
-          loader.parentNode.removeChild(loader);
-        }
-      }, 300);
+      loader.style.display = 'none'; // Immediate hide
+      console.log('Initial loader hidden');
     }
     
-    // Clear any loading timeout
+    // Clear all timeouts
     if (window.loadingTimeout) {
       clearTimeout(window.loadingTimeout);
       window.loadingTimeout = null;
+    }
+    if (authTimeout) {
+      clearTimeout(authTimeout);
     }
   }
 
@@ -595,7 +603,7 @@ async function showAppForUser(user) {
   // 1) Load initial items - wait for WantApp to be ready
   const waitForWantApp = async () => {
     let attempts = 0;
-    const maxAttempts = 50; // 5 seconds max wait
+    const maxAttempts = 30; // 3 seconds max wait (reduced)
     
     while (!window.wantApp && attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -603,6 +611,7 @@ async function showAppForUser(user) {
     }
     
     if (!window.wantApp) {
+      console.error('WantApp instance not available after 3 seconds');
       throw new Error('WantApp instance not available after waiting');
     }
     
@@ -1059,18 +1068,43 @@ export class WantApp {
     }
 
     async init() {
-        // Initialize Supabase auth
-        await authInit();
-        
-        // Test Supabase connection
-        console.log('🧪 Testing Supabase connection on mobile Safari...');
-        const connectionTest = await this.dataManager.testConnection();
-        console.log('🔍 Connection test result:', connectionTest);
-        
-        // Wire UI immediately when DOM is ready
-        this.wireUI();
-        this.enableGlobalPaste();
-        this.hydrateFromQueryParams();
+        try {
+            console.log('🚀 WantApp initialization started');
+            
+            // Initialize Supabase auth with timeout
+            const authPromise = authInit();
+            const authTimeout = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Auth timeout')), 8000)
+            );
+            
+            await Promise.race([authPromise, authTimeout]);
+            console.log('✅ Auth initialization completed');
+            
+            // Wire UI immediately when DOM is ready
+            this.wireUI();
+            this.enableGlobalPaste();
+            this.hydrateFromQueryParams();
+            
+            console.log('✅ WantApp initialization completed');
+            
+        } catch (error) {
+            console.error('❌ WantApp initialization failed:', error);
+            
+            // Hide loader immediately
+            const loader = document.getElementById('initial-loader');
+            if (loader) {
+                loader.style.display = 'none';
+            }
+            
+            // Force show login screen
+            try {
+                showLoginScreen();
+            } catch (loginError) {
+                console.error('Failed to show login screen:', loginError);
+                // Last resort: reload page
+                window.location.reload();
+            }
+        }
         
         // Database initialization removed - using Supabase only
         

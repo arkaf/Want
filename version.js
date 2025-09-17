@@ -1,7 +1,7 @@
 // App version configuration
 // Update this file when deploying new versions to GitHub
 
-export const APP_VERSION = '1.0.3';
+export const APP_VERSION = '1.0.4';
 export const BUILD_DATE = '2025-01-17';
 export const BUILD_INFO = {
     version: APP_VERSION,
@@ -12,7 +12,8 @@ export const BUILD_INFO = {
         'Cross-device sync',
         'Version tracking',
         'Fixed iPhone delete flow',
-        'Fixed automatic logout issue'
+        'Fixed automatic logout issue',
+        'Instant logout functionality'
     ]
 };
 

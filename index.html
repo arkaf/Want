@@ -98,7 +98,7 @@
         <div class="topbar-inner">
             <div class="header-left">
                 <img src="assets/want.svg" alt="Want" class="logo" />
-                <span class="version-badge" id="version-badge">v1.0.3</span>
+                <span class="version-badge" id="version-badge">v1.0.4</span>
             </div>
             <div class="header-actions">
                 <button id="settingsBtn" class="settings-btn" title="Settings">
@@ -240,7 +240,7 @@
     <script type="module">
         // Smart cache busting - only when needed
         const needsCacheBusting = sessionStorage.getItem('force-cache-refresh') === 'true';
-        const appVersion = '1.0.3'; // Update this when you need to force refresh
+        const appVersion = '1.0.4'; // Update this when you need to force refresh
         
         let importUrl = './app.js';
         if (needsCacheBusting) {
@@ -259,15 +259,47 @@
             window.wantApp = null;
         }
         
+        // Add loading timeout to prevent infinite loading
+        const loadingTimeout = setTimeout(() => {
+            console.error('App loading timeout - hiding loader and showing error');
+            const loader = document.getElementById('initial-loader');
+            if (loader) {
+                loader.style.display = 'none';
+            }
+            
+            // Show error message
+            document.body.innerHTML = `
+                <div style="padding: 40px 20px; text-align: center; font-family: Inter, sans-serif;">
+                    <h2 style="color: #333; margin-bottom: 16px;">Loading Timeout</h2>
+                    <p style="color: #666; margin-bottom: 24px;">The app is taking too long to load. This might be a network or cache issue.</p>
+                    <button onclick="window.location.reload()" style="background: #007AFF; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer;">
+                        Refresh App
+                    </button>
+                </div>
+            `;
+        }, 15000); // 15 second timeout
+        
         import(importUrl).then(module => {
             console.log('App module loaded successfully');
+            clearTimeout(loadingTimeout); // Clear timeout on success
+            
             const { WantApp } = module;
             window.wantApp = new WantApp();
             
             // Clear any reload attempts on success
             sessionStorage.removeItem('app-reload-attempted');
+            
+            // Ensure loader is hidden on successful load
+            setTimeout(() => {
+                const loader = document.getElementById('initial-loader');
+                if (loader) {
+                    loader.style.display = 'none';
+                }
+            }, 2000);
+            
         }).catch(error => {
             console.error('Failed to load app module:', error);
+            clearTimeout(loadingTimeout); // Clear timeout on error
             
             // Only try cache busting if we haven't already
             if (!needsCacheBusting && !sessionStorage.getItem('app-reload-attempted')) {
@@ -277,6 +309,10 @@
                 window.location.reload();
             } else {
                 console.error('App loading failed even after cache refresh');
+                const loader = document.getElementById('initial-loader');
+                if (loader) {
+                    loader.style.display = 'none';
+                }
                 document.body.innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Loading Error</h2><p>Unable to load the application. Please try refreshing the page.</p><button onclick="window.location.reload()">Refresh</button></div>';
             }
         });
